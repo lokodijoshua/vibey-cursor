@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><title>Welcome to VibeyCursor Pro</title></head>
+<body style="font-family:sans-serif; max-width:480px; margin:60px auto; text-align:center;">
+  <h1>🎉 Payment successful!</h1>
+  <p id="status">Generating your license key...</p>
+  <div id="key-box" style="display:none; margin-top:20px;">
+    <p>Your license key:</p>
+    <code id="license-key" style="background:#f3f3f3; padding:10px 16px; border-radius:8px; font-size:16px; display:inline-block;"></code>
+    <p style="margin-top:16px; font-size:13px; color:#666;">Paste this into the VibeyCursor extension popup under "Activate License".</p>
+  </div>
+  <script src="config.js"></script>
+  <script>
+    const sessionId = new URLSearchParams(location.search).get('session_id');
+    const BACKEND_URL = (window.VIBEY_CONFIG && window.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
+
+    if (!sessionId) {
+      // Payment Links redirect here without a session id — the license key
+      // arrives by email (see backend/lib/sendLicenseEmail.js).
+      document.getElementById('status').textContent = 'Payment received! Your license key is on its way to your email — paste it into the VibeyCursor extension popup under "Activate License".';
+    } else {
+      poll();
+    }
+
+    async function poll(attempt = 0) {
+      const MAX_ATTEMPTS = 30;
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/session-status?session_id=${sessionId}`);
+        const data = await res.json();
+        if (data.ready) {
+          document.getElementById('status').textContent = 'Your license is ready:';
+          document.getElementById('key-box').style.display = 'block';
+          document.getElementById('license-key').textContent = data.licenseKey;
+          return;
+        }
+      } catch (e) { /* retry until max attempts */ }
+      if (attempt + 1 >= MAX_ATTEMPTS) {
+        document.getElementById('status').textContent = 'Still working on your license — please check your email for your key. If nothing arrives, contact support.';
+        return;
+      }
+      setTimeout(() => poll(attempt + 1), 2000);
+    }
+  </script>
+</body>
+</html>

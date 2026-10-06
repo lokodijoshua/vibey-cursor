@@ -1,0 +1,152 @@
+/* content.css additions */
+#vc-highlight {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  border: 2px solid #a855f7 !important;
+  background: rgba(168, 85, 247, 0.15) !important;
+  pointer-events: none !important;
+  display: none;
+  box-sizing: border-box !important;
+}
+#vc-tooltip {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  background: #1a1a1a !important;
+  color: #fff !important;
+  font: 600 11px -apple-system, sans-serif !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  pointer-events: none !important;
+  display: none;
+  white-space: nowrap !important;
+}
+#vc-toggle-btn {
+  position: fixed !important;
+  bottom: 20px !important;
+  right: 20px !important;
+  z-index: 2147483647 !important;
+  background: #1a1a1a !important;
+  color: #fff !important;
+  font: 600 12px -apple-system, sans-serif !important;
+  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3) !important;
+  user-select: none !important;
+}
+#vc-toggle-btn.off { opacity: 0.6 !important; }
+#vc-history-btn {
+  position: fixed !important;
+  bottom: 112px !important;
+  right: 20px !important;
+  z-index: 2147483647 !important;
+  background: #1a1a1a !important;
+  color: #fff !important;
+  font: 600 12px -apple-system, sans-serif !important;
+  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3) !important;
+  user-select: none !important;
+}
+#vc-shot-thumb {
+  width: 120px !important;
+  border-radius: 6px !important;
+  display: block !important;
+  margin-bottom: 6px !important;
+}
+#vc-limit-popup {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2147483647 !important;
+  background: #17171f !important;
+  border: 1px solid #a855f7 !important;
+  border-radius: 16px !important;
+  padding: 22px 26px !important;
+  text-align: center !important;
+  display: none;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6) !important;
+  max-width: 300px !important;
+}
+#vc-limit-popup .vc-limit-title {
+  color: #fff !important;
+  font: 700 15px -apple-system, sans-serif !important;
+  margin-bottom: 8px !important;
+}
+#vc-limit-popup .vc-limit-sub {
+  color: #c6c6d8 !important;
+  font: 400 12px -apple-system, sans-serif !important;
+  margin-bottom: 14px !important;
+}
+#vc-limit-popup button {
+  border: none !important;
+  border-radius: 999px !important;
+  font: 700 12px -apple-system, sans-serif !important;
+  padding: 9px 16px !important;
+  cursor: pointer !important;
+  margin: 0 4px !important;
+}
+#vc-limit-upgrade { background: #a855f7 !important; color: #fff !important; }
+#vc-limit-close { background: #2a2a35 !important; color: #fff !important; }
+#vc-badge {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  background: #a855f7 !important;
+  color: #fff !important;
+  font: 600 12px -apple-system, sans-serif !important;
+  padding: 8px 14px !important;
+  border-radius: 999px !important;
+  pointer-events: none !important;
+  display: none;
+  white-space: nowrap !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3) !important;
+}
+#vc-mode-switch {
+  position: fixed !important;
+  bottom: 68px !important;
+  right: 20px !important;
+  z-index: 2147483647 !important;
+  background: #1a1a1a !important;
+  border-radius: 999px !important;
+  display: flex !important;
+  padding: 3px !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3) !important;
+}
+#vc-mode-switch button {
+  border: none !important;
+  background: transparent !important;
+  color: #999 !important;
+  font: 600 11px -apple-system, sans-serif !important;
+  padding: 6px 12px !important;
+  border-radius: 999px !important;
+  cursor: pointer !important;
+}
+#vc-mode-switch button.active {
+  background: #a855f7 !important;
+  color: #fff !important;
+}
+
+#vc-action-bar {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  display: none;
+  gap: 6px;
+  background: #111 !important;
+  padding: 6px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4) !important;
+}
+#vc-action-bar button {
+  border: none !important;
+  background: #2a2a2a !important;
+  color: #fff !important;
+  font: 500 11px -apple-system, sans-serif !important;
+  padding: 7px 10px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  white-space: nowrap;
+}
+#vc-action-bar button:hover { background: #3a3a3a !important; }
+#vc-action-bar button.premium { background: #7c3aed !important; }

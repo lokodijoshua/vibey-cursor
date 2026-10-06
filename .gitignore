@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+backend/.env.local
+
+# Vercel
+.vercel/
+
+# Chrome extension signing keys (NEVER commit — anyone with the .pem can
+# publish updates as you) and packed builds
+*.pem
+*.crx
+
+# Supabase local CLI state (may contain connection strings)
+supabase/.temp/
+
+# OS
+.DS_Store
+Thumbs.db

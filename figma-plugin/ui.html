@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; padding: 12px;">
+  <p style="font-size:12px;">Paste your VibeyCursor JSON export:</p>
+  <textarea id="json-input" style="width:100%; height:100px;"></textarea>
+  <button id="import-btn" style="margin-top:8px; width:100%; padding:8px;">Import into Figma</button>
+  <script>
+    document.getElementById('import-btn').onclick = () => {
+      parent.postMessage({
+        pluginMessage: { type: 'import', json: document.getElementById('json-input').value }
+      }, '*');
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+body { margin: 0; font: 13px -apple-system, sans-serif; background: #0d0d0d; color: #eee; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #222; }
+header h2 { font-size: 15px; margin: 0; }
+header button { background: #222; color: #aaa; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+#history-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; max-height: 100vh; overflow-y: auto; }
+.card { background: #171717; border-radius: 10px; padding: 10px; }
+.card img { width: 100%; border-radius: 6px; margin-bottom: 8px; background: #000; }
+.card .meta { font-size: 11px; color: #888; margin-bottom: 8px; }
+.card .actions { display: flex; gap: 6px; }
+.card button { flex: 1; background: #2a2a2a; color: #fff; border: none; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.card button:hover { background: #a855f7; }
+.card .del { background: #3a1a1a; }
+.card .del:hover { background: #ef4444; }
+.locked-wrap { position: relative; margin-top: 10px; }
+.locked-preview .card.blurred { filter: blur(6px); user-select: none; pointer-events: none; margin-bottom: 10px; font-size: 12px; color: #888; }
+.locked-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(13,13,13,.55); border-radius: 10px; padding: 20px; }
+.locked-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.locked-sub { font-size: 12px; color: #aaa; margin-bottom: 14px; }
+.locked-overlay button { background: #a855f7; color: #fff; border: none; padding: 10px 22px; border-radius: 999px; font-weight: 700; cursor: pointer; font-size: 13px; }
+#pager button { background: #2a2a2a; color: #fff; border: none; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 11px; }
+#pager button:disabled { opacity: 0.35; cursor: default; }

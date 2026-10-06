@@ -1,0 +1,10 @@
+{
+  "name": "vibeycursor-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "stripe": "^14.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "micro": "^10.0.1"
+  }
+}

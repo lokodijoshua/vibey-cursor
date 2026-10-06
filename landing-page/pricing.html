@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeyCursor — Pricing</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #0b0b10; color: #f4f4f6; text-align: center; padding: 60px 24px; }
+  h1 { font-size: 32px; margin-bottom: 8px; }
+  p.sub { color: #9a9aad; margin-bottom: 30px; }
+  .plans { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .plan { background: #15151d; border: 1px solid #26263a; border-radius: 18px; padding: 30px; width: 250px; }
+  .plan.hot { border-color: #a855f7; box-shadow: 0 0 30px rgba(168,85,247,.25); }
+  .plan .price { font-size: 34px; font-weight: 800; margin: 10px 0; }
+  .plan .price small { font-size: 14px; color: #9a9aad; font-weight: 400; }
+  .plan ul { list-style: none; text-align: left; font-size: 13px; color: #9a9aad; margin: 16px 0 22px; padding: 0; }
+  .plan ul li { margin: 7px 0; } .plan ul li::before { content: "✓ "; color: #a855f7; }
+  .btn-primary { display: block; background: #a855f7; color: #fff; text-decoration: none; padding: 12px; border-radius: 999px; font-weight: 700; font-size: 14px; }
+  .current { display: block; padding: 12px; border-radius: 999px; font-size: 14px; color: #9a9aad; border: 1px solid #26263a; }
+</style>
+</head>
+<body>
+  <h1>Simple pricing</h1>
+  <p class="sub">Start free. Upgrade when you want screenshots, sections &amp; AI rewriting.</p>
+  <div class="plans">
+    <div class="plan">
+      <h3>Free</h3>
+      <div class="price">$0 <small>forever</small></div>
+      <ul><li>Hover + click capture</li><li>Copy as text prompt</li><li>20 captures per day</li></ul>
+      <span class="current">Currently active</span>
+    </div>
+    <div class="plan hot">
+      <h3>Pro</h3>
+      <div class="price">$9.99 <small>/month</small></div>
+      <ul><li>Element screenshots</li><li>Full section capture</li><li>AI-enhanced prompts</li><li>History + JSON + Figma</li></ul>
+      <a href="#" id="pro-upgrade-link" class="btn-primary">Upgrade to Pro — $9.99/mo</a>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    document.getElementById('pro-upgrade-link').href =
+      (window.VIBEY_CONFIG && window.VIBEY_CONFIG.STRIPE_PAYMENT_LINK_URL) || '#';
+  </script>
+</body>
+</html>
