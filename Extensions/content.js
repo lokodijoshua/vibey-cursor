@@ -231,6 +231,7 @@ async function saveToHistory(capture) {
 }
 
 async function performCapture(el) {
+  await refreshPlan();
   const quota = await checkQuota();
   if (!quota.allowed) {
     showLimitPopup(quota);
@@ -439,5 +440,12 @@ chrome.storage.onChanged.addListener((changes) => {
 });
 
 function isPro() {
-  return currentPlan === 'pro';
+  return String(currentPlan || 'free').toLowerCase() === 'pro';
+}
+
+// Re-read the plan fresh before gating anything Pro: content scripts can hold
+// a stale value if the user activated after the page was injected.
+async function refreshPlan() {
+  const { licensePlan } = await chrome.storage.local.get('licensePlan');
+  currentPlan = licensePlan || 'free';
 }

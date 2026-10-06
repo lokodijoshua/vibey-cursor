@@ -37,7 +37,7 @@ export default async function handler(req, res) {
 
   res.status(200).json({
     valid,
-    plan: valid ? data.plan : 'free',
+    plan: valid ? String(data.plan || 'free').toLowerCase() : 'free',
     email: data.email
   });
 }
