@@ -150,3 +150,17 @@ Hourly entitlement refresh + live server verification on every privileged
 operation already neutralize replay value. JWTs would add key management and
 revocation complexity without new security. Revisit only if a stateless edge
 check becomes necessary.
+
+## AI observability (`ai_usage_events`)
+
+Every server-side OpenAI call records one row: license link, installation
+hash, operation (`enhance`; new ops need no redesign), element type
+(client-provided, informational only), prompt length (server-measured), model,
+**authoritative token counts straight from the API response**
+(`input/output/total`, never estimates, never client values), estimated USD
+cost (from `backend/lib/ai-costs.js` — gpt-4o-mini $0.15/$0.60 per 1M, an
+accounting estimate), latency, status (`allowed`/`failed` + error category),
+request id. Failures record NULL tokens, never invented numbers. Nothing
+stored: no prompts, no HTML, no keys. Hierarchy stays
+**request count (50/day) → token usage → estimated cost**; tokens inform
+pricing, they don't gate users.

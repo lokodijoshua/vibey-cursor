@@ -1,7 +1,9 @@
 import { supabase } from '../lib/supabase.js';
 import { checkRateLimit, rateLimited } from '../lib/rateLimit.js';
 import { config } from '../lib/config.js';
+import { AI_MODEL, estimateCostUsd, estimateInputTokens } from '../lib/ai-costs.js';
 import { findLicense, entitlementFor, openActivations, hashIdentity, recordEvent } from '../lib/licensing.js';
+import crypto from 'crypto';
 
 // POST /api/enhance { prompt, licenseKey, installationId? }
 // Server-side Pro AI proxy with cost protection:
@@ -20,6 +22,12 @@ export default async function handler(req, res) {
   if (!licenseKey) return res.status(403).json({ error: 'Invalid or expired license' });
   if (typeof prompt !== 'string' || prompt.length === 0) return res.status(400).json({ error: 'Missing prompt' });
   if (prompt.length > config.PRO_ENHANCE_MAX_CHARS) return res.status(400).json({ error: 'Prompt too long' });
+
+  // Client-provided element metadata is informational only: capped, never
+  // trusted for billing or security decisions. Sizes are recorded from the
+  // server-measured prompt, not client claims.
+  const meta = req.body?.meta && typeof req.body.meta === 'object' ? req.body.meta : {};
+  const elementType = typeof meta.elementType === 'string' ? meta.elementType.slice(0, 32) : null;
 
   const { license } = await findLicense(supabase, licenseKey);
   const { pro } = entitlementFor(license);
@@ -62,6 +70,29 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: 'Daily enhancement limit reached', code: 'quota_exceeded', retry_after_seconds: 3600 });
   }
 
+  const requestId = crypto.randomUUID();
+  const installationHash = installationId ? hashIdentity(`install:${installationId}`) : null;
+  const t0 = Date.now();
+
+  async function recordAi(partial) {
+    try {
+      await supabase.from('ai_usage_events').insert({
+        license_id: license.id,
+        installation_hash: installationHash,
+        operation: 'enhance',
+        element_type: elementType,
+        prompt_chars: prompt.length,
+        estimated_input_tokens: estimateInputTokens(prompt.length),
+        model: AI_MODEL,
+        latency_ms: Date.now() - t0,
+        request_id: requestId,
+        ...partial,
+      });
+    } catch (err) {
+      console.error('ai usage record failed');
+    }
+  }
+
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -70,7 +101,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: AI_MODEL,
         messages: [
           {
             role: 'system',
@@ -84,14 +115,43 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       console.error('OpenAI request failed with status', response.status);
+      await recordAi({
+        status: 'failed',
+        error_category: response.status < 500 ? 'upstream-4xx' : 'upstream-5xx',
+        input_tokens: null,
+        output_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: null,
+      });
       return res.status(500).json({ error: 'Enhancement failed' });
     }
 
     const data = await response.json();
     const enhanced = data?.choices?.[0]?.message?.content;
     if (!enhanced) {
+      await recordAi({ status: 'failed', error_category: 'empty-response', input_tokens: null, output_tokens: null, total_tokens: null, estimated_cost_usd: null });
       return res.status(500).json({ error: 'Enhancement failed' });
     }
+
+    // Authoritative usage comes from the OpenAI response — never estimates,
+    // never client values.
+    const usage = data?.usage || {};
+    const inputTokens = Number.isFinite(usage.prompt_tokens) ? usage.prompt_tokens : null;
+    const outputTokens = Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : null;
+    const totalTokens = Number.isFinite(usage.total_tokens) ? usage.total_tokens : null;
+    const cachedInput = Number.isFinite(usage?.prompt_tokens_details?.cached_tokens)
+      ? usage.prompt_tokens_details.cached_tokens
+      : null;
+
+    await recordAi({
+      status: 'allowed',
+      error_category: null,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: totalTokens,
+      cached_input_tokens: cachedInput,
+      estimated_cost_usd: estimateCostUsd(AI_MODEL, inputTokens, outputTokens),
+    });
 
     try {
       await recordEvent(supabase, { identityHash: licenseHash, identityType: 'license', operation: 'enhance', result: 'allowed' });
@@ -102,6 +162,7 @@ export default async function handler(req, res) {
     res.status(200).json({ enhanced });
   } catch (err) {
     console.error('Enhancement failed');
+    await recordAi({ status: 'failed', error_category: 'exception', input_tokens: null, output_tokens: null, total_tokens: null, estimated_cost_usd: null });
     res.status(500).json({ error: 'Enhancement failed' });
   }
 }

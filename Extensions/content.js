@@ -401,6 +401,23 @@ function exportJSON(capture) {
   chrome.runtime.sendMessage({ type: 'DOWNLOAD_JSON', json, filename: `vc-${capture.id}.json` });
 }
 
+// Coarse element taxonomy for owner analytics (informational only — the
+// server never trusts it for billing or security).
+function elementTypeFromTag(tag, mode) {
+  if (mode === 'section') return 'section';
+  const t = String(tag || '').toLowerCase();
+  if (['button'].includes(t)) return 'button';
+  if (['a'].includes(t)) return 'link';
+  if (['form', 'input', 'select', 'textarea', 'label'].includes(t)) return 'form';
+  if (['nav', 'header', 'footer'].includes(t)) return 'navigation';
+  if (['dialog'].includes(t) || t.includes('modal')) return 'modal';
+  if (['img', 'picture', 'video', 'svg', 'canvas'].includes(t)) return 'media';
+  if (['ul', 'ol', 'li', 'table'].includes(t)) return 'list';
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span'].includes(t)) return 'text';
+  if (['div', 'section', 'article', 'main', 'aside'].includes(t)) return 'component';
+  return 'other';
+}
+
 function showActionBar(rect, capture) {
   let bar = document.getElementById('vc-action-bar');
   if (!bar) bar = createEl('div', 'vc-action-bar');
@@ -425,7 +442,13 @@ function showActionBar(rect, capture) {
     if (!can('ai_enhance')) return showUpgradeToast('AI Enhance is a Pro feature');
     bar.querySelector('#vc-ai-enhance').textContent = 'Enhancing...';
     chrome.runtime.sendMessage(
-      { type: 'AI_ENHANCE', prompt: capture.prompt, licenseKey: await getLicenseKey(), installationId: await getInstallationId() },
+      {
+        type: 'AI_ENHANCE',
+        prompt: capture.prompt,
+        licenseKey: await getLicenseKey(),
+        installationId: await getInstallationId(),
+        meta: { elementType: elementTypeFromTag(capture.tag, capture.mode) },
+      },
       (res) => {
         if (res?.success) {
           navigator.clipboard.writeText(res.enhanced);
