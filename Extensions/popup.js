@@ -4,6 +4,19 @@ const SITE_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) |
 const pricingLink = document.getElementById('pricing-link');
 if (pricingLink) pricingLink.href = `${SITE_URL}/pricing.html`;
 
+// Decorative background art only — failures fall back to the gradient.
+// (typeof guard: config.js may evolve; never break the popup over art.)
+try {
+  const gifUrl = typeof POPUP_BACKGROUND_GIF_URL === 'string' ? POPUP_BACKGROUND_GIF_URL : '';
+  const gifEl = document.getElementById('popup-bg-gif');
+  if (gifUrl && gifEl) {
+    gifEl.onerror = () => { gifEl.style.display = 'none'; };
+    gifEl.src = gifUrl;
+  } else if (gifEl) {
+    gifEl.style.display = 'none';
+  }
+} catch (e) { /* art must never break function */ }
+
 // Keys look like VIBEY-AB12-CD34-EF56-7890. Normalize pasted input
 // (trim + uppercase) and reject anything malformed before any network call.
 const LICENSE_RE = /^VIBEY-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/;

@@ -6,3 +6,7 @@ globalThis.VIBEY_CONFIG = {
   SITE_URL: 'https://landing-page-navy-six-58.vercel.app',
   STRIPE_PAYMENT_LINK_URL: 'https://buy.stripe.com/test_14A7sKeGg1RxdOI3NsfnO01'
 };
+
+// Popup background art. Public asset URL (not a secret) — replace freely.
+// Empty string = gradient fallback only.
+const POPUP_BACKGROUND_GIF_URL = 'https://res.cloudinary.com/dyzlx6pnt/image/upload/v1791224640/ezgif.com-video-to-gif-converter_pdsvjb.gif';

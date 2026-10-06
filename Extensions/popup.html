@@ -1,20 +1,30 @@
 <!DOCTYPE html>
 <html>
-<body style="width:260px; font-family:sans-serif; padding:14px;">
-  <h3 style="margin:0 0 10px;">VibeyCursor</h3>
-  <div id="plan-pill" style="display:inline-block; font-size:11px; font-weight:800; padding:4px 12px; border-radius:999px; margin-bottom:10px; background:#2a2a35; color:#9a9aad;">FREE</div>
-  <div id="status" style="font-size:12px; color:#666; margin-bottom:10px;">Checking license...</div>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body style="width:260px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:0; margin:0; background:#0b0b10; color:#f4f4f6;">
+  <div id="popup-bg" aria-hidden="true">
+    <img id="popup-bg-gif" alt="" referrerpolicy="no-referrer">
+    <div id="popup-bg-overlay"></div>
+  </div>
+  <div id="popup-content" style="padding:16px 14px 14px;">
+  <h3 style="margin:0 0 8px; font-size:16px; font-weight:800; letter-spacing:-.2px;">VibeyCursor</h3>
+  <div id="plan-pill" style="display:inline-block; font-size:11px; font-weight:800; padding:4px 12px; border-radius:999px; margin-bottom:8px; background:#3a3a48; color:#e2e2ee; letter-spacing:.4px;">FREE</div>
+  <div id="status" style="font-size:12px; color:#c6c6d8; margin-bottom:12px;">Checking license...</div>
 
   <div id="free-view">
-    <input id="license-input" placeholder="Enter license key" style="width:100%; padding:6px; box-sizing:border-box; margin-bottom:8px;">
-    <button id="activate-btn" style="width:100%; padding:8px; background:#a855f7; color:#fff; border:none; border-radius:6px; cursor:pointer;">Activate Pro</button>
-    <a id="pricing-link" href="#" target="_blank" style="display:block; text-align:center; margin-top:10px; font-size:11px; color:#a855f7;">View Pricing →</a>
+    <input id="license-input" placeholder="Enter license key" style="width:100%; padding:8px 10px; box-sizing:border-box; margin-bottom:8px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.16); border-radius:8px; color:#fff; font-size:12px; outline:none;">
+    <button id="activate-btn" style="width:100%; padding:9px; background:#a855f7; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px;">Activate Pro</button>
+    <a id="pricing-link" href="#" target="_blank" style="display:block; text-align:center; margin-top:10px; font-size:11px; color:#c4b5fd; text-decoration:none;">View Pricing →</a>
   </div>
 
   <div id="pro-view" style="display:none;">
-    <p style="font-size:13px;">✅ Pro plan active</p>
-    <p id="pro-email" style="font-size:11px; color:#9a9aad; word-break:break-all;"></p>
-    <button id="deactivate-btn" style="width:100%; padding:6px; background:#333; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:11px;">Sign out</button>
+    <p style="font-size:13px; margin:0 0 4px;">✅ Pro plan active</p>
+    <p id="pro-email" style="font-size:11px; color:#c6c6d8; word-break:break-all; margin:0 0 8px;"></p>
+    <button id="deactivate-btn" style="width:100%; padding:7px; background:#2a2a35; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:11px;">Sign out</button>
+  </div>
   </div>
 
   <script src="config.js"></script>

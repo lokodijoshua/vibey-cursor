@@ -1,0 +1,43 @@
+/* VibeyCursor popup — background art + polish layer.
+   All functional styling remains inline in popup.html; this file owns ONLY
+   the decorative background layers so the UI stays readable over them. */
+
+#popup-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+#popup-bg-gif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.38;
+}
+
+#popup-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11,11,16,.78) 0%, rgba(11,11,16,.86) 60%, rgba(11,11,16,.92) 100%);
+}
+
+#popup-content {
+  position: relative;
+  z-index: 1;
+}
+
+#license-input::placeholder { color: #8a8a9e; }
+#license-input:focus { border-color: #a855f7; background: rgba(168,85,247,.12); }
+
+#activate-btn:hover { background: #9333ea; }
+#activate-btn:active { background: #7c3aed; transform: translateY(1px); }
+#pricing-link:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  #popup-bg-gif { display: none; }
+}
