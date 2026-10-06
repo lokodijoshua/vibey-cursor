@@ -38,18 +38,26 @@ function backendUrl() {
 }
 
 // Ask the server whether another capture is allowed right now.
-// Pro users send their license key for the 300/day quota, free users get
-// 20/day by network. Fails OPEN: offline captures still proceed.
+// Sends installation id always, license key when present — the server
+// decides the tier. Fails OPEN for network errors (offline captures
+// proceed); authoritative denies (429/503 shapes) are honored.
 async function checkQuota() {
   try {
-    const licenseKey = isPro() ? await getLicenseKey() : null;
+    const { licenseKey } = await chrome.storage.local.get('licenseKey');
     const res = await fetch(`${backendUrl()}/api/usage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(licenseKey ? { licenseKey } : {})
+      body: JSON.stringify({
+        ...(licenseKey ? { licenseKey } : {}),
+        installationId: await getInstallationId(),
+      })
     });
-    if (!res.ok) return { allowed: true };
-    return await res.json();
+    if (!res.ok && res.status !== 429) return { allowed: true };
+    const quota = await res.json();
+    if (quota && typeof quota.remaining === 'number') {
+      try { await chrome.storage.local.set({ vcQuota: { remaining: quota.remaining, limit: quota.limit || null } }); } catch (e) {}
+    }
+    return quota.allowed === false ? quota : { allowed: true, ...quota };
   } catch (e) {
     return { allowed: true };
   }
@@ -64,7 +72,10 @@ function showLimitPopup(quota) {
   const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
   const proLimit = (quota.limit || 20) > 20;
   const title = proLimit ? 'Daily Pro limit reached' : 'Daily free limit reached';
-  const sub = `You've used all ${quota.limit || 20} ${proLimit ? 'Pro' : 'free'} captures. Resets in 24 hours.`;
+  const waitText = quota.retry_after_seconds
+    ? `Try again in about ${Math.max(1, Math.round(quota.retry_after_seconds / 60))} min.`
+    : 'Resets in 24 hours.';
+  const sub = `You've used all ${quota.limit || 20} ${proLimit ? 'Pro' : 'free'} captures. ${waitText}`;
   pop.innerHTML = `
     <div class="vc-limit-title">${title}</div>
     <div class="vc-limit-sub">${sub}</div>
@@ -213,9 +224,10 @@ function createModeSwitch() {
     switcher.querySelector('#vc-mode-element').classList.add('active');
     switcher.querySelector('#vc-mode-section').classList.remove('active');
   });
-  switcher.querySelector('#vc-mode-section').addEventListener('click', (e) => {
+  switcher.querySelector('#vc-mode-section').addEventListener('click', async (e) => {
     e.stopPropagation();
-    if (!isPro()) return showUpgradeToast('Section capture is a Pro feature');
+    await fetchEntitlements();
+    if (entitlements.plan !== 'pro') return showUpgradeToast('Section capture is a Pro feature');
     currentMode = MODE.SECTION;
     switcher.querySelector('#vc-mode-section').classList.add('active');
     switcher.querySelector('#vc-mode-element').classList.remove('active');
@@ -232,6 +244,7 @@ async function saveToHistory(capture) {
 
 async function performCapture(el) {
   await refreshPlan();
+  await fetchEntitlements();
   const quota = await checkQuota();
   if (!quota.allowed) {
     showLimitPopup(quota);
@@ -243,7 +256,7 @@ async function performCapture(el) {
 
   showBadge(rect, 'Capturing...');
 
-  const wantShot = isPro();
+  const wantShot = can('screenshot_context');
   const screenshot = wantShot ? await captureScreenshot(el) : null;
 
   let prompt, jsonData;
@@ -269,7 +282,7 @@ async function performCapture(el) {
   };
 
   await navigator.clipboard.writeText(prompt);
-  if (isPro()) await saveToHistory(capture);
+  if (can('history')) await saveToHistory(capture);
 
   showActionBar(rect, capture);
   if (screenshot) showBadge(rect, 'Screenshot + prompt copied ✓');
@@ -395,7 +408,7 @@ function showActionBar(rect, capture) {
   bar.innerHTML = `
     ${capture.screenshot ? `<img id="vc-shot-thumb" src="${capture.screenshot}" alt="capture">` : ''}
     <button id="vc-copy-prompt">Copy Prompt</button>
-    <button id="vc-copy-json" class="${isPro() ? '' : 'locked'}">JSON</button>
+    <button id="vc-copy-json" class="${can('json_context') ? '' : 'locked'}">JSON</button>
     <button id="vc-ai-enhance" class="premium">✨ AI Enhance</button>
     <button id="vc-open-history">📜 History</button>
   `;
@@ -405,14 +418,14 @@ function showActionBar(rect, capture) {
 
   bar.querySelector('#vc-copy-prompt').onclick = () => navigator.clipboard.writeText(capture.prompt);
   bar.querySelector('#vc-copy-json').onclick = () => {
-    if (!isPro()) return showUpgradeToast('JSON export is a Pro feature');
+    if (!can('json_context')) return showUpgradeToast('JSON export is a Pro feature');
     navigator.clipboard.writeText(JSON.stringify(capture.json, null, 2));
   };
   bar.querySelector('#vc-ai-enhance').onclick = async () => {
-    if (!isPro()) return showUpgradeToast('AI Enhance is a Pro feature');
+    if (!can('ai_enhance')) return showUpgradeToast('AI Enhance is a Pro feature');
     bar.querySelector('#vc-ai-enhance').textContent = 'Enhancing...';
     chrome.runtime.sendMessage(
-      { type: 'AI_ENHANCE', prompt: capture.prompt, licenseKey: await getLicenseKey() },
+      { type: 'AI_ENHANCE', prompt: capture.prompt, licenseKey: await getLicenseKey(), installationId: await getInstallationId() },
       (res) => {
         if (res?.success) {
           navigator.clipboard.writeText(res.enhanced);
@@ -431,17 +444,66 @@ function showActionBar(rect, capture) {
 }
 let currentPlan = 'free';
 
+// Central entitlement state. Fetched from /api/entitlements (the single
+// authority); cached up to 1h for UX. Server re-verifies on every
+// privileged operation, so this cache can never grant real access.
+let entitlements = { plan: 'free', features: {} };
+let entFetchedAt = 0;
+const ENT_TTL_MS = 60 * 60 * 1000;
+
+async function getInstallationId() {
+  const { vcDeviceId } = await chrome.storage.local.get('vcDeviceId');
+  if (vcDeviceId) return vcDeviceId;
+  const fresh = (crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random()}`);
+  await chrome.storage.local.set({ vcDeviceId: fresh });
+  return fresh;
+}
+
+async function fetchEntitlements(force = false) {
+  if (!force && Date.now() - entFetchedAt < ENT_TTL_MS && entFetchedAt > 0) return entitlements;
+  try {
+    const { licenseKey } = await chrome.storage.local.get('licenseKey');
+    const res = await fetch(`${backendUrl()}/api/entitlements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(licenseKey ? { licenseKey } : {}),
+        installationId: await getInstallationId(),
+      })
+    });
+    if (res.ok) {
+      entitlements = await res.json();
+      entFetchedAt = Date.now();
+      currentPlan = entitlements.plan || 'free';
+      await chrome.storage.local.set({ licensePlan: currentPlan });
+    }
+  } catch (e) {
+    // Offline: keep last-known state; server still guards everything.
+  }
+  return entitlements;
+}
+
+function can(feature) {
+  return !!(entitlements.features && entitlements.features[feature]);
+}
+
+function isPro() {
+  // Legacy alias kept for compatibility; new code must use can(feature) or
+  // entitlements.plan. Single source of truth remains /api/entitlements.
+  return String(entitlements.plan || currentPlan || 'free').toLowerCase() === 'pro';
+}
+
 chrome.storage.local.get('licensePlan', (data) => {
   currentPlan = data.licensePlan || 'free';
 });
 
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.licensePlan) currentPlan = changes.licensePlan.newValue;
+  if (changes.licensePlan) {
+    currentPlan = changes.licensePlan.newValue;
+    entFetchedAt = 0; // plan changed (activation): refresh entitlements next use
+    fetchEntitlements(true);
+  }
 });
-
-function isPro() {
-  return String(currentPlan || 'free').toLowerCase() === 'pro';
-}
 
 // Re-read the plan fresh before gating anything Pro: content scripts can hold
 // a stale value if the user activated after the page was injected.
@@ -449,3 +511,6 @@ async function refreshPlan() {
   const { licensePlan } = await chrome.storage.local.get('licensePlan');
   currentPlan = licensePlan || 'free';
 }
+
+// Warm the entitlement cache on startup (spec: refresh on extension start).
+fetchEntitlements();

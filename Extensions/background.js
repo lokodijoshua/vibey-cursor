@@ -19,7 +19,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     fetch(`${BACKEND_URL}/api/enhance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: msg.prompt, licenseKey: msg.licenseKey })
+      body: JSON.stringify({ prompt: msg.prompt, licenseKey: msg.licenseKey, installationId: msg.installationId || undefined })
     })
       .then(r => r.json())
       .then(data => sendResponse({ success: true, enhanced: data.enhanced }))

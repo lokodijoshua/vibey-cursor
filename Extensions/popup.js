@@ -28,7 +28,7 @@ async function getDeviceId() {
 }
 
 async function refreshUI() {
-  const { licenseKey, licensePlan, licenseEmail } = await chrome.storage.local.get(['licenseKey', 'licensePlan', 'licenseEmail']);
+  const { licenseKey, licensePlan, licenseEmail, vcQuota } = await chrome.storage.local.get(['licenseKey', 'licensePlan', 'licenseEmail', 'vcQuota']);
   const freeView = document.getElementById('free-view');
   const proView = document.getElementById('pro-view');
   const status = document.getElementById('status');
@@ -45,8 +45,9 @@ async function refreshUI() {
   } else {
     freeView.style.display = 'block';
     proView.style.display = 'none';
-    status.textContent = 'Free plan — upgrade anytime';
-    pill.textContent = 'FREE';
+    const left = vcQuota && typeof vcQuota.remaining === 'number' ? ` · ${vcQuota.remaining} left` : '';
+    status.textContent = `Free plan — upgrade anytime${left}`;
+    pill.textContent = `FREE${left}`;
     pill.style.background = '#2a2a35';
     pill.style.color = '#9a9aad';
   }
@@ -80,6 +81,8 @@ document.getElementById('activate-btn').addEventListener('click', async () => {
     if (data.valid) {
       await chrome.storage.local.set({ licenseKey: key, licensePlan: data.plan, licenseEmail: data.email || '' });
       refreshUI();
+    } else if (data.code === 'activation_limit' || data.reason === 'activation_limit') {
+      showFormError('This key is already active on 2 browsers. Deactivate it on an old browser first, then try again.');
     } else if (data.reason === 'device_mismatch') {
       showFormError('This key is already active in another browser. Contact support to move it.');
     } else {
@@ -92,6 +95,20 @@ document.getElementById('activate-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('deactivate-btn').addEventListener('click', async () => {
+  // Free the server-side activation slot first (best-effort), then wipe local.
+  try {
+    const { licenseKey } = await chrome.storage.local.get('licenseKey');
+    const { vcDeviceId } = await chrome.storage.local.get('vcDeviceId');
+    if (licenseKey && vcDeviceId) {
+      await fetch(`${BACKEND}/api/deactivate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ licenseKey, installationId: vcDeviceId })
+      });
+    }
+  } catch (err) {
+    // Offline deactivation still clears local state below.
+  }
   await chrome.storage.local.remove(['licenseKey', 'licensePlan', 'licenseEmail']);
   refreshUI();
 });

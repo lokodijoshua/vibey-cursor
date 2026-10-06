@@ -17,13 +17,14 @@ export default async function handler(req, res) {
 
     const { data } = await supabase
       .from('licenses')
-      .select('license_key, plan')
+      .select('plan')
       .eq('email', email)
       .single();
 
     if (!data) return res.status(200).json({ ready: false });
 
-    res.status(200).json({ ready: true, licenseKey: data.license_key, plan: String(data.plan || 'free').toLowerCase(), email });
+    // The license key itself is never exposed here; it travels by email only.
+    res.status(200).json({ ready: true, plan: String(data.plan || 'free').toLowerCase(), email });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch session' });
   }

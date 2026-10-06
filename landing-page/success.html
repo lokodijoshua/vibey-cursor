@@ -3,21 +3,17 @@
 <head><title>Welcome to VibeyCursor Pro</title></head>
 <body style="font-family:sans-serif; max-width:480px; margin:60px auto; text-align:center;">
   <h1>🎉 Payment successful!</h1>
-  <p id="status">Generating your license key...</p>
-  <div id="key-box" style="display:none; margin-top:20px;">
-    <p>Your license key:</p>
-    <code id="license-key" style="background:#f3f3f3; padding:10px 16px; border-radius:8px; font-size:16px; display:inline-block;"></code>
-    <p style="margin-top:16px; font-size:13px; color:#666;">Paste this into the VibeyCursor extension popup under "Activate License".</p>
-  </div>
+  <p id="status">Confirming your payment...</p>
   <script src="config.js"></script>
   <script>
     const sessionId = new URLSearchParams(location.search).get('session_id');
     const BACKEND_URL = (window.VIBEY_CONFIG && window.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
+    const EMAIL_DONE = 'Payment confirmed! Your license key is on its way to your email — paste it into the VibeyCursor extension popup under "Activate License".';
 
     if (!sessionId) {
       // Payment Links redirect here without a session id — the license key
       // arrives by email (see backend/lib/sendLicenseEmail.js).
-      document.getElementById('status').textContent = 'Payment received! Your license key is on its way to your email — paste it into the VibeyCursor extension popup under "Activate License".';
+      document.getElementById('status').textContent = EMAIL_DONE;
     } else {
       poll();
     }
@@ -28,9 +24,7 @@
         const res = await fetch(`${BACKEND_URL}/api/session-status?session_id=${sessionId}`);
         const data = await res.json();
         if (data.ready) {
-          document.getElementById('status').textContent = 'Your license is ready:';
-          document.getElementById('key-box').style.display = 'block';
-          document.getElementById('license-key').textContent = data.licenseKey;
+          document.getElementById('status').textContent = EMAIL_DONE;
           return;
         }
       } catch (e) { /* retry until max attempts */ }
