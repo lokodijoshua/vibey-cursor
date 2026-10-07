@@ -150,3 +150,17 @@
 }
 #vc-action-bar button:hover { background: #3a3a3a !important; }
 #vc-action-bar button.premium { background: #7c3aed !important; }
+
+/* Single SVG icon language: 12px, currentColor, baseline-aligned. */
+.vc-ico {
+  width: 12px !important;
+  height: 12px !important;
+  flex: none !important;
+  vertical-align: -2px !important;
+}
+#vc-history-btn .vc-ico { margin-right: 5px !important; }
+#vc-action-bar button .vc-ico { margin-right: 5px !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  #vc-highlight, #vc-tooltip, #vc-badge, #vc-action-bar { transition: none !important; }
+}

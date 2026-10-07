@@ -27,6 +27,11 @@ export const config = {
 
   // Usage-event retention guidance (days). Cleanup is a scheduled job.
   USAGE_EVENT_RETENTION_DAYS: 30,
+
+  // Behavior analytics ingestion caps (product telemetry, never quota).
+  ANALYTICS_MAX_BATCH: 50, // max events accepted per POST
+  ANALYTICS_DAILY_CAP: 1000, // max events per installation per rolling 24h
+  ANALYTICS_RETENTION_DAYS: 30,
 };
 
 // Central feature entitlements per plan. The ONLY place that decides what a

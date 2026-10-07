@@ -17,17 +17,19 @@
   <div id="free-view">
     <input id="license-input" placeholder="Enter license key" style="width:100%; padding:8px 10px; box-sizing:border-box; margin-bottom:8px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.16); border-radius:8px; color:#fff; font-size:12px; outline:none;">
     <button id="activate-btn" style="width:100%; padding:9px; background:#a855f7; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px;">Activate Pro</button>
-    <a id="pricing-link" href="#" target="_blank" style="display:block; text-align:center; margin-top:10px; font-size:11px; color:#c4b5fd; text-decoration:none;">View Pricing →</a>
+    <a id="pricing-link" href="#" target="_blank" style="display:block; text-align:center; margin-top:10px; font-size:11px; color:#c4b5fd; text-decoration:none;"><span>View Pricing</span></a>
   </div>
 
   <div id="pro-view" style="display:none;">
-    <p style="font-size:13px; margin:0 0 4px;">✅ Pro plan active</p>
+    <p id="pro-active-line" style="font-size:13px; margin:0 0 4px;"><span>Pro plan active</span></p>
     <p id="pro-email" style="font-size:11px; color:#c6c6d8; word-break:break-all; margin:0 0 8px;"></p>
     <button id="deactivate-btn" style="width:100%; padding:7px; background:#2a2a35; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:11px;">Sign out</button>
   </div>
   </div>
 
   <script src="config.js"></script>
+  <script src="analytics.js"></script>
+  <script src="icons.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

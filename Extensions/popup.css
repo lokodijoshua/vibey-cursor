@@ -41,6 +41,11 @@
 #activate-btn:active { background: #7c3aed; transform: translateY(1px); }
 #pricing-link:hover { text-decoration: underline; }
 
+/* Single SVG icon language (shared with content script): 12px, currentColor. */
+.vc-ico { width: 12px; height: 12px; vertical-align: -2px; }
+#pro-active-line .vc-ico { margin-right: 5px; color: #4ade80; }
+#pricing-link .vc-ico { margin-left: 3px; }
+
 @media (prefers-reduced-motion: reduce) {
   #popup-bg-gif { display: none; }
 }

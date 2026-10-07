@@ -1,4 +1,5 @@
 try { importScripts('config.js'); } catch (e) { /* config optional in some contexts */ }
+try { importScripts('analytics.js'); } catch (e) { /* queue lib optional in some contexts */ }
 const BACKEND_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
@@ -28,15 +29,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'ANALYTICS_FLUSH_HINT') {
+    scheduleAnalyticsFlush();
+  }
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== 'toggle-inspector') return;
+  if (command !== 'toggle-inspector' && command !== 'toggle-vibey-ui') return;
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_INSPECTOR' });
+    if (!tab?.id) return;
+    if (command === 'toggle-inspector') chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_INSPECTOR' });
+    else chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_VIBEY_UI' });
   } catch (e) { /* tab may not have content script */ }
 });
 
 chrome.alarms.create('revalidate-license', { periodInMinutes: 60 });
+chrome.alarms.create('analytics-flush', { periodInMinutes: 5 });
 
 // Stable per-browser ID (random, not hardware info). Generated once and
 // reused so a license stays bound to the browser that activated it.
@@ -49,6 +59,10 @@ async function getDeviceId() {
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === 'analytics-flush') {
+    flushAnalytics();
+    return;
+  }
   if (alarm.name !== 'revalidate-license') return;
 
   const { licenseKey } = await chrome.storage.local.get('licenseKey');
@@ -66,3 +80,56 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     console.warn('License revalidation failed', err);
   }
 });
+
+// ---- Behavior analytics flush (best-effort; never affects product) ----
+let analyticsFlushTimer = null;
+let analyticsFlushInFlight = false;
+let analyticsBackoffMs = 0;
+
+function scheduleAnalyticsFlush() {
+  if (analyticsFlushTimer) return;
+  analyticsFlushTimer = setTimeout(() => {
+    analyticsFlushTimer = null;
+    flushAnalytics();
+  }, 5000);
+}
+
+async function flushAnalytics() {
+  if (analyticsFlushInFlight) return;
+  const QA = globalThis.VIBEY_ANALYTICS;
+  if (!QA || !QA.drain) return;
+  analyticsFlushInFlight = true;
+  try {
+    if (analyticsBackoffMs > 0) {
+      await new Promise((r) => setTimeout(r, analyticsBackoffMs));
+    }
+    const batch = await QA.drain(50);
+    if (!batch || batch.length === 0) {
+      analyticsBackoffMs = 0;
+      return;
+    }
+    const store = await chrome.storage.local.get(['licenseKey', 'vcSessionId']);
+    const res = await fetch(`${BACKEND_URL}/api/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        installationId: await getDeviceId(),
+        licenseKey: store.licenseKey || undefined,
+        sessionId: store.vcSessionId || undefined,
+        events: batch,
+      }),
+    });
+    if (!res.ok) {
+      await QA.requeue(batch);
+      analyticsBackoffMs = Math.min(analyticsBackoffMs ? analyticsBackoffMs * 2 : 60000, 30 * 60000);
+    } else {
+      analyticsBackoffMs = 0;
+    }
+  } catch (err) {
+    try {
+      // Network/offline: leave events queued for the next alarm.
+    } catch (e) { /* never throw */ }
+  } finally {
+    analyticsFlushInFlight = false;
+  }
+}

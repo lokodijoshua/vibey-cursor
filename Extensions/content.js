@@ -5,6 +5,9 @@ function createEl(tag, id) {
 }
 
 function showBadge(rect, text) {
+  try {
+    if (typeof vcUIVisible !== 'undefined' && !vcUIVisible) return;
+  } catch (e) { /* visible by default */ }
   let badge = document.getElementById('vc-badge');
   if (!badge) {
     badge = createEl('div', 'vc-badge');
@@ -22,9 +25,10 @@ function showBadge(rect, text) {
 
 function showUpgradeToast(message) {
   const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
+  vcTrack('upsell_shown', { source: 'upgrade-toast' });
   showBadge(
     { top: window.innerHeight - 100, left: window.innerWidth - 300 },
-    `🔒 ${message} — upgrade at ${siteUrl}`
+    `${message} — upgrade at ${siteUrl}`
   );
 }
 
@@ -36,6 +40,53 @@ async function getLicenseKey() {
 function backendUrl() {
   return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
 }
+
+// Behavior analytics helper (fire-and-forget; never blocks product).
+// Sends metadata only: element type, dimensions, counts. Never text
+// content, input values, or raw URLs (hostname only).
+function vcTrack(event, props) {
+  try {
+    if (globalThis.VIBEY_ANALYTICS && globalThis.VIBEY_ANALYTICS.track) {
+      globalThis.VIBEY_ANALYTICS.track(event, props || {});
+    }
+  } catch (e) { /* analytics must never break product */ }
+}
+
+// Icon helper (single SVG language from icons.js; empty string if missing).
+function vcIcon(name) {
+  try {
+    if (typeof vibeyIcon === 'function') return vibeyIcon(name);
+    if (globalThis.vibeyIcon) return globalThis.vibeyIcon(name);
+  } catch (e) { /* icons are decorative */ }
+  return '';
+}
+
+function vcElementMeta(el, extra) {
+  const out = Object.assign({}, extra);
+  try {
+    const rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    const vw = window.innerWidth || 0;
+    const vh = window.innerHeight || 0;
+    out.viewport_w = vw;
+    out.viewport_h = vh;
+    if (rect) {
+      out.el_w = Math.round(rect.width);
+      out.el_h = Math.round(rect.height);
+      if (vw > 0 && vh > 0) {
+        out.norm_x = Math.min(1, Math.max(0, (rect.left + rect.width / 2) / vw));
+        out.norm_y = Math.min(1, Math.max(0, (rect.top + rect.height / 2) / vh));
+      }
+    }
+    try {
+      out.hostname = location.hostname ? location.hostname.slice(0, 128) : undefined;
+    } catch (e) { /* ignore */ }
+  } catch (e) { /* metadata is best-effort */ }
+  return out;
+}
+
+// UI-visibility state for the Ctrl+Shift+H toggle. Visibility only —
+// never touches inspectorEnabled, license, history, or session state.
+let vcUIVisible = true;
 
 // Ask the server whether another capture is allowed right now.
 // Sends installation id always, license key when present — the server
@@ -86,6 +137,7 @@ function showLimitPopup(quota) {
   const upBtn = pop.querySelector('#vc-limit-upgrade');
   if (upBtn) {
     upBtn.onclick = () => {
+      vcTrack('upsell_clicked', { source: 'limit-popup' });
       window.open(`${siteUrl}/pricing.html`, '_blank');
       pop.style.display = 'none';
     };
@@ -93,6 +145,7 @@ function showLimitPopup(quota) {
   pop.querySelector('#vc-limit-close').onclick = () => {
     pop.style.display = 'none';
   };
+  vcTrack('upsell_shown', { source: quota && quota.limit > 20 ? 'limit-pro' : 'limit-free' });
   clearTimeout(showLimitPopup._t);
   showLimitPopup._t = setTimeout(() => { pop.style.display = 'none'; }, 8000);
 }
@@ -245,8 +298,12 @@ async function saveToHistory(capture) {
 async function performCapture(el) {
   await refreshPlan();
   await fetchEntitlements();
+  const tag = el.tagName ? el.tagName.toLowerCase() : '';
+  const elementType = elementTypeFromTag(tag, currentMode);
+  vcTrack('capture_started', vcElementMeta(el, { element_type: elementType, tag, mode: currentMode }));
   const quota = await checkQuota();
   if (!quota.allowed) {
+    vcTrack('capture_denied', vcElementMeta(el, { element_type: elementType, tag, mode: currentMode, source: 'quota' }));
     showLimitPopup(quota);
     return;
   }
@@ -256,6 +313,7 @@ async function performCapture(el) {
 
   showBadge(rect, 'Capturing...');
 
+  try {
   const wantShot = can('screenshot_context');
   const screenshot = wantShot ? await captureScreenshot(el) : null;
 
@@ -283,11 +341,30 @@ async function performCapture(el) {
 
   await navigator.clipboard.writeText(prompt);
   if (can('history')) await saveToHistory(capture);
+  vcTrack('capture_completed', vcElementMeta(el, {
+    element_type: elementTypeFromTag(capture.tag, capture.mode),
+    tag: capture.tag, mode: capture.mode, prompt_chars: prompt ? prompt.length : 0,
+  }));
+  vcTrack('prompt_generated', vcElementMeta(el, {
+    element_type: elementTypeFromTag(capture.tag, capture.mode),
+    tag: capture.tag, mode: capture.mode, prompt_chars: prompt ? prompt.length : 0,
+  }));
+  vcTrack('prompt_copied', vcElementMeta(el, {
+    element_type: elementTypeFromTag(capture.tag, capture.mode),
+    tag: capture.tag, mode: capture.mode, source: 'capture',
+  }));
 
   showActionBar(rect, capture);
-  if (screenshot) showBadge(rect, 'Screenshot + prompt copied ✓');
-  else if (wantShot) showBadge(rect, 'Prompt copied ✓ (screenshot failed)');
-  else showBadge(rect, 'Copied as prompt ✓');
+  if (screenshot) showBadge(rect, 'Screenshot + prompt copied');
+  else if (wantShot) showBadge(rect, 'Prompt copied (screenshot failed)');
+  else showBadge(rect, 'Copied as prompt');
+  } catch (err) {
+    vcTrack('capture_failed', vcElementMeta(el, {
+      element_type: elementType, tag, mode: currentMode,
+      error: err && err.name ? String(err.name).slice(0, 64) : 'error',
+    }));
+    showBadge(rect, 'Capture failed — try again');
+  }
 }
 
 let inspectorEnabled = false;
@@ -311,6 +388,7 @@ function ensureOverlay() {
 }
 
 function positionHighlight(el) {
+  if (!vcUIVisible) return;
   ensureOverlay();
   const rect = el.getBoundingClientRect();
   highlightBox.style.display = 'block';
@@ -329,11 +407,17 @@ function hideHighlight() {
   if (tooltip) tooltip.style.display = 'none';
 }
 
-function setInspectorEnabled(on) {
+function setInspectorEnabled(on, source) {
   inspectorEnabled = on;
   toggleBtn.textContent = `VibeyCursor: ${on ? 'ON' : 'OFF'}`;
   toggleBtn.classList.toggle('off', !on);
-  if (!on) hideHighlight();
+  vcTrack('inspector_toggled', { source: source || 'unknown', error: on ? 'on' : 'off' });
+  if (on) vcTrack('vibey_shown', { source: source || 'unknown' });
+  else {
+    vcTrack('vibey_hidden', { source: source || 'unknown' });
+    vcTrack('tool_deactivated', { source: source || 'unknown' });
+    hideHighlight();
+  }
 }
 
 document.addEventListener('mouseover', (e) => {
@@ -343,6 +427,13 @@ document.addEventListener('mouseover', (e) => {
   if (isVibeyUI(el)) { hideHighlight(); return; }
   if (!(el instanceof Element)) return;
   positionHighlight(el);
+  // Sampled highlight telemetry (1-in-50) — never a request per hover.
+  try {
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    vcTrack('element_highlighted', vcElementMeta(el, {
+      element_type: elementTypeFromTag(tag, currentMode), tag, mode: currentMode, sample: 50,
+    }));
+  } catch (err) { /* best-effort */ }
 });
 
 document.addEventListener('mouseout', (e) => {
@@ -362,36 +453,74 @@ document.addEventListener('click', (e) => {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'TOGGLE_INSPECTOR') {
-    setInspectorEnabled(!inspectorEnabled);
+    setInspectorEnabled(!inspectorEnabled, 'shortcut');
+    vcTrack('shortcut_used', { source: 'toggle-inspector' });
+  }
+  if (msg.type === 'TOGGLE_VIBEY_UI') {
+    setUIVisible(!vcUIVisible, 'shortcut');
+    vcTrack('shortcut_used', { source: 'toggle-vibey-ui' });
   }
 });
+
+// Visibility-only toggle (Ctrl+Shift+H). Hides/shows VibeyCursor overlay
+// and controls without changing capture mode, license, history, or session.
+function setUIVisible(visible, source) {
+  vcUIVisible = visible;
+  const ids = ['vc-toggle-btn', 'vc-history-btn', 'vc-mode-switch',
+    'vc-action-bar', 'vc-badge', 'vc-limit-popup', 'vc-highlight', 'vc-tooltip'];
+  for (const id of ids) {
+    try {
+      const node = document.getElementById(id);
+      if (node) node.style.display = visible ? '' : 'none';
+    } catch (e) { /* best-effort */ }
+  }
+  if (!visible) hideHighlight();
+  try {
+    chrome.storage.local.set({ vcUIVisible: visible });
+  } catch (e) { /* persistence is best-effort */ }
+  vcTrack(visible ? 'vibey_shown' : 'vibey_hidden', { source: source || 'unknown' });
+}
+
+// Restore persisted visibility once the floating UI exists.
+function restoreUIVisibility() {
+  try {
+    chrome.storage.local.get('vcUIVisible', (data) => {
+      if (data && data.vcUIVisible === false) setUIVisible(false, 'restore');
+    });
+  } catch (e) { /* visible by default */ }
+}
 
 const toggleBtn = createEl('div', 'vc-toggle-btn');
 toggleBtn.textContent = 'VibeyCursor: OFF';
 toggleBtn.classList.add('off');
 toggleBtn.addEventListener('click', (e) => {
   e.stopPropagation();
-  setInspectorEnabled(!inspectorEnabled);
+  setInspectorEnabled(!inspectorEnabled, 'toggle-btn');
 });
 toggleBtn.addEventListener('dblclick', () => {
+  vcTrack('history_opened', { source: 'toggle-dblclick' });
   chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
 });
 
 const historyBtn = createEl('div', 'vc-history-btn');
-historyBtn.textContent = '📜 History';
+historyBtn.innerHTML = `${vcIcon('history')}<span>History</span>`;
+historyBtn.setAttribute('aria-label', 'Open capture history');
 historyBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  vcTrack('history_opened', { source: 'history-btn' });
   chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
 });
 if (document.body) {
   document.body.appendChild(toggleBtn);
   document.body.appendChild(historyBtn);
   document.body.appendChild(createModeSwitch());
+  restoreUIVisibility();
 } else {
   document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(toggleBtn);
     document.body.appendChild(historyBtn);
     document.body.appendChild(createModeSwitch());
+    restoreUIVisibility();
   });
 }
 
@@ -403,17 +532,21 @@ function exportJSON(capture) {
 
 // Coarse element taxonomy for owner analytics (informational only — the
 // server never trusts it for billing or security).
+// Minimal 13-value set: button, link, media, heading, text, form-field,
+// form, navigation, section, component, list-table, modal, other.
 function elementTypeFromTag(tag, mode) {
   if (mode === 'section') return 'section';
   const t = String(tag || '').toLowerCase();
-  if (['button'].includes(t)) return 'button';
-  if (['a'].includes(t)) return 'link';
-  if (['form', 'input', 'select', 'textarea', 'label'].includes(t)) return 'form';
-  if (['nav', 'header', 'footer'].includes(t)) return 'navigation';
-  if (['dialog'].includes(t) || t.includes('modal')) return 'modal';
+  if (t === 'button') return 'button';
+  if (t === 'a') return 'link';
   if (['img', 'picture', 'video', 'svg', 'canvas'].includes(t)) return 'media';
-  if (['ul', 'ol', 'li', 'table'].includes(t)) return 'list';
-  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span'].includes(t)) return 'text';
+  if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(t)) return 'heading';
+  if (['p', 'span'].includes(t)) return 'text';
+  if (['input', 'textarea', 'select'].includes(t)) return 'form-field';
+  if (['form', 'label'].includes(t)) return 'form';
+  if (['nav', 'header', 'footer'].includes(t)) return 'navigation';
+  if (t === 'dialog' || t.includes('modal')) return 'modal';
+  if (['ul', 'ol', 'li', 'table', 'dl', 'dt', 'dd'].includes(t)) return 'list-table';
   if (['div', 'section', 'article', 'main', 'aside'].includes(t)) return 'component';
   return 'other';
 }
@@ -424,23 +557,34 @@ function showActionBar(rect, capture) {
 
   bar.innerHTML = `
     ${capture.screenshot ? `<img id="vc-shot-thumb" src="${capture.screenshot}" alt="capture">` : ''}
-    <button id="vc-copy-prompt">Copy Prompt</button>
-    <button id="vc-copy-json" class="${can('json_context') ? '' : 'locked'}">JSON</button>
-    <button id="vc-ai-enhance" class="premium">✨ AI Enhance</button>
-    <button id="vc-open-history">📜 History</button>
+    <button id="vc-copy-prompt" aria-label="Copy prompt">${vcIcon('copy')}<span>Copy Prompt</span></button>
+    <button id="vc-copy-json" class="${can('json_context') ? '' : 'locked'}" aria-label="Copy JSON">${vcIcon('code')}<span>JSON</span></button>
+    <button id="vc-ai-enhance" class="premium" aria-label="AI enhance prompt">${vcIcon('spark')}<span>AI Enhance</span></button>
+    <button id="vc-open-history" aria-label="Open history">${vcIcon('history')}<span>History</span></button>
   `;
   bar.style.display = 'flex';
   bar.style.top = Math.max(rect.top - 80, 10) + 'px';
   bar.style.left = rect.left + 'px';
 
-  bar.querySelector('#vc-copy-prompt').onclick = () => navigator.clipboard.writeText(capture.prompt);
+  bar.querySelector('#vc-copy-prompt').onclick = () => {
+    navigator.clipboard.writeText(capture.prompt);
+    vcTrack('prompt_copied', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, source: 'action-bar' });
+  };
   bar.querySelector('#vc-copy-json').onclick = () => {
-    if (!can('json_context')) return showUpgradeToast('JSON export is a Pro feature');
+    if (!can('json_context')) {
+      vcTrack('json_locked', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode });
+      return showUpgradeToast('JSON export is a Pro feature');
+    }
     navigator.clipboard.writeText(JSON.stringify(capture.json, null, 2));
+    vcTrack('json_copied', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode });
   };
   bar.querySelector('#vc-ai-enhance').onclick = async () => {
-    if (!can('ai_enhance')) return showUpgradeToast('AI Enhance is a Pro feature');
-    bar.querySelector('#vc-ai-enhance').textContent = 'Enhancing...';
+    if (!can('ai_enhance')) {
+      vcTrack('enhance_failed', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, error: 'locked' });
+      return showUpgradeToast('AI Enhance is a Pro feature');
+    }
+    vcTrack('enhance_requested', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, prompt_chars: capture.prompt ? capture.prompt.length : 0 });
+    bar.querySelector('#vc-ai-enhance').innerHTML = `<span>Enhancing...</span>`;
     chrome.runtime.sendMessage(
       {
         type: 'AI_ENHANCE',
@@ -452,14 +596,18 @@ function showActionBar(rect, capture) {
       (res) => {
         if (res?.success) {
           navigator.clipboard.writeText(res.enhanced);
-          showBadge(rect, 'Enhanced prompt copied ✓');
+          vcTrack('enhance_completed', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode });
+          showBadge(rect, 'Enhanced prompt copied');
+        } else {
+          vcTrack('enhance_failed', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, error: 'upstream' });
         }
-        bar.querySelector('#vc-ai-enhance').textContent = '✨ AI Enhance';
+        bar.querySelector('#vc-ai-enhance').innerHTML = `${vcIcon('spark')}<span>AI Enhance</span>`;
       }
     );
   };
 
   bar.querySelector('#vc-open-history').onclick = () => {
+    vcTrack('history_opened', { source: 'action-bar' });
     chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
   };
 

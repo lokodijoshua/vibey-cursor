@@ -19,3 +19,9 @@ header button { background: #222; color: #aaa; border: none; padding: 6px 10px; 
 .locked-overlay button { background: #a855f7; color: #fff; border: none; padding: 10px 22px; border-radius: 999px; font-weight: 700; cursor: pointer; font-size: 13px; }
 #pager button { background: #2a2a2a; color: #fff; border: none; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 11px; }
 #pager button:disabled { opacity: 0.35; cursor: default; }
+
+/* Single SVG icon language (shared with content script): 12px, currentColor. */
+.vc-ico { width: 12px; height: 12px; flex: none; vertical-align: -2px; }
+.card .meta .vc-ico, .locked-title .vc-ico, .locked-preview .vc-ico { margin-right: 5px; }
+.card .actions button .vc-ico { margin-right: 4px; }
+#pager button .vc-ico { vertical-align: -2px; }

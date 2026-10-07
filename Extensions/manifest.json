@@ -25,12 +25,16 @@
     "toggle-inspector": {
       "suggested_key": { "default": "Ctrl+Shift+V", "mac": "Command+Shift+V" },
       "description": "Toggle VibeyCursor on/off"
+    },
+    "toggle-vibey-ui": {
+      "suggested_key": { "default": "Ctrl+Shift+H", "mac": "Command+Shift+H" },
+      "description": "Hide/show VibeyCursor interface (visibility only)"
     }
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["config.js", "lib/html2canvas.min.js", "content.js"],
+      "js": ["config.js", "analytics.js", "icons.js", "lib/html2canvas.min.js", "content.js"],
       "css": ["content.css"]
     }
   ]

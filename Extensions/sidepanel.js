@@ -1,5 +1,27 @@
 const PAGE_SIZE = 10;
 let currentPage = 0;
+let historyOpenedTracked = false;
+
+function spTrack(event, props) {
+  try {
+    if (globalThis.VIBEY_ANALYTICS && globalThis.VIBEY_ANALYTICS.track) {
+      globalThis.VIBEY_ANALYTICS.track(event, props || {});
+    }
+  } catch (e) { /* never break UI */ }
+}
+
+function spIcon(name) {
+  try {
+    if (globalThis.vibeyIcon) return globalThis.vibeyIcon(name);
+  } catch (e) { /* icons are decorative */ }
+  return '';
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
 
 function siteUrl() {
   return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
@@ -12,18 +34,19 @@ function renderLocked() {
   list.innerHTML = `
     <div class="locked-wrap">
       <div class="locked-preview">
-        <div class="card blurred">📦 Section · &lt;div&gt; · example.com</div>
-        <div class="card blurred">🔹 Element · &lt;button&gt; · example.com</div>
-        <div class="card blurred">🔹 Element · &lt;h1&gt; · example.com</div>
+        <div class="card blurred">${spIcon('box')}<span>Section · &lt;div&gt; · example.com</span></div>
+        <div class="card blurred">${spIcon('frame')}<span>Element · &lt;button&gt; · example.com</span></div>
+        <div class="card blurred">${spIcon('frame')}<span>Element · &lt;h1&gt; · example.com</span></div>
       </div>
       <div class="locked-overlay">
-        <div class="locked-title">🔒 History is a Pro feature</div>
+        <div class="locked-title">${spIcon('lock')}<span>History is a Pro feature</span></div>
         <div class="locked-sub">Every capture you take is saved here with its screenshot — upgrade to unlock it.</div>
         <button id="locked-upgrade">Upgrade to Pro</button>
       </div>
     </div>
   `;
   document.getElementById('locked-upgrade').addEventListener('click', () => {
+    spTrack('upsell_clicked', { source: 'history-locked' });
     chrome.tabs.create({ url: `${siteUrl()}/pricing.html` });
   });
 }
@@ -31,18 +54,39 @@ function renderLocked() {
 function renderCard(item) {
   const card = document.createElement('div');
   card.className = 'card';
-  card.innerHTML = `
-    ${item.screenshot ? `<img src="${item.screenshot}">` : ''}
-    <div class="meta">${item.mode === 'section' ? '📦 Section' : '🔹 Element'} · &lt;${item.tag}&gt; · ${new URL(item.url).hostname}</div>
-    <div class="actions">
-      <button class="copy-prompt">Copy Prompt</button>
-      <button class="copy-json">Copy JSON</button>
-      <button class="del">Delete</button>
-    </div>
+  const isSection = item.mode === 'section';
+  const kindIcon = isSection ? spIcon('box') : spIcon('frame');
+  const kindLabel = isSection ? 'Section' : 'Element';
+  let host = '';
+  try {
+    host = new URL(item.url).hostname;
+  } catch (e) { host = ''; }
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = `${kindIcon}<span></span>`;
+  meta.querySelector('span').textContent = `${kindLabel} · <${item.tag}> · ${host}`;
+  const img = item.screenshot ? document.createElement('img') : null;
+  if (img) img.src = item.screenshot;
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.innerHTML = `
+      <button class="copy-prompt" aria-label="Copy prompt">${spIcon('copy')}<span>Copy Prompt</span></button>
+      <button class="copy-json" aria-label="Copy JSON">${spIcon('code')}<span>Copy JSON</span></button>
+      <button class="del" aria-label="Delete capture">${spIcon('trash')}<span>Delete</span></button>
   `;
-  card.querySelector('.copy-prompt').addEventListener('click', () => navigator.clipboard.writeText(item.prompt));
-  card.querySelector('.copy-json').addEventListener('click', () => navigator.clipboard.writeText(JSON.stringify(item.json, null, 2)));
+  if (img) card.appendChild(img);
+  card.appendChild(meta);
+  card.appendChild(actions);
+  card.querySelector('.copy-prompt').addEventListener('click', () => {
+    navigator.clipboard.writeText(item.prompt);
+    spTrack('history_item_copied', { tag: item.tag, mode: item.mode, source: 'prompt' });
+  });
+  card.querySelector('.copy-json').addEventListener('click', () => {
+    navigator.clipboard.writeText(JSON.stringify(item.json, null, 2));
+    spTrack('history_item_copied', { tag: item.tag, mode: item.mode, source: 'json' });
+  });
   card.querySelector('.del').addEventListener('click', async () => {
+    spTrack('history_item_deleted', { tag: item.tag, mode: item.mode });
     const { vcHistory = [] } = await chrome.storage.local.get('vcHistory');
     await chrome.storage.local.set({ vcHistory: vcHistory.filter(h => h.id !== item.id) });
     render();
@@ -52,6 +96,11 @@ function renderCard(item) {
 
 async function render() {
   const { vcHistory = [], licensePlan = 'free' } = await chrome.storage.local.get(['vcHistory', 'licensePlan']);
+  if (!historyOpenedTracked) {
+    historyOpenedTracked = true;
+    spTrack('history_opened', { source: 'sidepanel' });
+    if (licensePlan !== 'pro') spTrack('upsell_shown', { source: 'history-locked' });
+  }
   const list = document.getElementById('history-list');
   const pager = document.getElementById('pager');
   list.innerHTML = '';
@@ -86,6 +135,10 @@ async function render() {
   }
 }
 
+try {
+  document.getElementById('page-prev').innerHTML = `${spIcon('chevL')}<span>Prev</span>`;
+  document.getElementById('page-next').innerHTML = `<span>Next</span>${spIcon('chevR')}`;
+} catch (e) { /* keep text labels */ }
 document.getElementById('page-prev').addEventListener('click', () => {
   if (currentPage > 0) { currentPage -= 1; render(); }
 });

@@ -2,7 +2,20 @@ const BACKEND = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL)
 const SITE_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
 
 const pricingLink = document.getElementById('pricing-link');
-if (pricingLink) pricingLink.href = `${SITE_URL}/pricing.html`;
+if (pricingLink) {
+  pricingLink.href = `${SITE_URL}/pricing.html`;
+  try {
+    if (globalThis.vibeyIcon) {
+      const span = pricingLink.querySelector('span') || pricingLink;
+      span.insertAdjacentHTML('afterend', globalThis.vibeyIcon('arrowR'));
+    }
+  } catch (e) { /* text label is sufficient */ }
+  pricingLink.addEventListener('click', () => {
+    try {
+      if (globalThis.VIBEY_ANALYTICS) globalThis.VIBEY_ANALYTICS.track('upsell_clicked', { source: 'popup' });
+    } catch (e) { /* never break UI */ }
+  });
+}
 
 // Decorative background art only — failures fall back to the gradient.
 // (typeof guard: config.js may evolve; never break the popup over art.)
@@ -51,10 +64,16 @@ async function refreshUI() {
     freeView.style.display = 'none';
     proView.style.display = 'block';
     status.textContent = `Plan: ${licensePlan.toUpperCase()}`;
-    pill.textContent = '★ PRO';
+    pill.textContent = 'PRO';
     pill.style.background = '#a855f7';
     pill.style.color = '#fff';
     document.getElementById('pro-email').textContent = licenseEmail || '';
+    try {
+      const line = document.getElementById('pro-active-line');
+      if (line && globalThis.vibeyIcon && !line.querySelector('svg')) {
+        line.insertAdjacentHTML('afterbegin', globalThis.vibeyIcon('checkCircle'));
+      }
+    } catch (e) { /* text label is sufficient */ }
   } else {
     freeView.style.display = 'block';
     proView.style.display = 'none';
@@ -93,6 +112,9 @@ document.getElementById('activate-btn').addEventListener('click', async () => {
 
     if (data.valid) {
       await chrome.storage.local.set({ licenseKey: key, licensePlan: data.plan, licenseEmail: data.email || '' });
+      try {
+        if (globalThis.VIBEY_ANALYTICS) globalThis.VIBEY_ANALYTICS.track('license_activated', {});
+      } catch (e) { /* never break UI */ }
       refreshUI();
     } else if (data.code === 'activation_limit' || data.reason === 'activation_limit') {
       showFormError('This key is already active on 2 browsers. Deactivate it on an old browser first, then try again.');
@@ -123,6 +145,9 @@ document.getElementById('deactivate-btn').addEventListener('click', async () => 
     // Offline deactivation still clears local state below.
   }
   await chrome.storage.local.remove(['licenseKey', 'licensePlan', 'licenseEmail']);
+  try {
+    if (globalThis.VIBEY_ANALYTICS) globalThis.VIBEY_ANALYTICS.track('license_deactivated', {});
+  } catch (err) { /* never break UI */ }
   refreshUI();
 });
 

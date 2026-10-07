@@ -144,6 +144,16 @@ webhook), more AI features (new `usage_events.operation` + cap), higher quotas
 (config numbers only), history sync (new table, same identity), enterprise
 (SSO would be the first password-adjacent feature — deliberate decision).
 
+## Behavior analytics (`analytics_events`, see `docs/ANALYTICS.md`)
+
+Fire-and-forget product telemetry (metadata only — never prompts, HTML,
+input values, or raw URLs). Client queue (`Extensions/analytics.js`) →
+background SW flush → `POST /api/analytics` → `analytics_events`
+(event allowlist, hashed installation/hostname, server-derived plan,
+1000 events/installation/day cap, 30-day retention). The extension never
+`await`s analytics; quota/entitlement paths are untouched. No admin
+panel — data foundation only.
+
 ## Why no JWT
 
 Hourly entitlement refresh + live server verification on every privileged
