@@ -24,7 +24,7 @@ function showBadge(rect, text) {
 }
 
 function showUpgradeToast(message) {
-  const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
+  const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://vibey-cursor-landing-page.vercel.app';
   vcTrack('upsell_shown', { source: 'upgrade-toast' });
   showBadge(
     { top: window.innerHeight - 100, left: window.innerWidth - 300 },
@@ -120,7 +120,7 @@ function showLimitPopup(quota) {
     pop = createEl('div', 'vc-limit-popup');
     document.documentElement.appendChild(pop);
   }
-  const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
+  const siteUrl = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://vibey-cursor-landing-page.vercel.app';
   const proLimit = (quota.limit || 20) > 20;
   const title = proLimit ? 'Daily Pro limit reached' : 'Daily free limit reached';
   const waitText = quota.retry_after_seconds

@@ -24,7 +24,7 @@ function escHtml(s) {
 }
 
 function siteUrl() {
-  return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://landing-page-navy-six-58.vercel.app';
+  return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://vibey-cursor-landing-page.vercel.app';
 }
 
 function renderLocked() {
