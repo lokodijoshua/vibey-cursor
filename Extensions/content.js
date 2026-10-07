@@ -61,6 +61,15 @@ function vcIcon(name) {
   return '';
 }
 
+// Fire-and-forget runtime message. Promise rejections (extension
+// reloading, no receiving end) are swallowed — never unhandled errors.
+function vcSend(msg) {
+  try {
+    const p = chrome.runtime.sendMessage(msg);
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch (e) { /* messaging is best-effort */ }
+}
+
 function vcElementMeta(el, extra) {
   const out = Object.assign({}, extra);
   try {
@@ -499,7 +508,7 @@ toggleBtn.addEventListener('click', (e) => {
 });
 toggleBtn.addEventListener('dblclick', () => {
   vcTrack('history_opened', { source: 'toggle-dblclick' });
-  chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+  vcSend({ type: 'OPEN_SIDE_PANEL' });
 });
 
 const historyBtn = createEl('div', 'vc-history-btn');
@@ -508,7 +517,7 @@ historyBtn.setAttribute('aria-label', 'Open capture history');
 historyBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   vcTrack('history_opened', { source: 'history-btn' });
-  chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+  vcSend({ type: 'OPEN_SIDE_PANEL' });
 });
 if (document.body) {
   document.body.appendChild(toggleBtn);
@@ -608,7 +617,7 @@ function showActionBar(rect, capture) {
 
   bar.querySelector('#vc-open-history').onclick = () => {
     vcTrack('history_opened', { source: 'action-bar' });
-    chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+    vcSend({ type: 'OPEN_SIDE_PANEL' });
   };
 
   setTimeout(() => { bar.style.display = 'none'; }, 6000);

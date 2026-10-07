@@ -40,9 +40,12 @@ chrome.commands.onCommand.addListener(async (command) => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) return;
-    if (command === 'toggle-inspector') chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_INSPECTOR' });
-    else chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_VIBEY_UI' });
-  } catch (e) { /* tab may not have content script */ }
+    const msg = command === 'toggle-inspector' ? { type: 'TOGGLE_INSPECTOR' } : { type: 'TOGGLE_VIBEY_UI' };
+    // Awaited inside try: on chrome:// pages, the Web Store, or tabs where
+    // the content script never injected, this rejects — treated as a no-op
+    // instead of an unhandled (and scary-looking) promise rejection.
+    await chrome.tabs.sendMessage(tab.id, msg);
+  } catch (e) { /* no content script on this tab: nothing to toggle */ }
 });
 
 chrome.alarms.create('revalidate-license', { periodInMinutes: 60 });

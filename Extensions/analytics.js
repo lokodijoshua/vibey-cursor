@@ -74,9 +74,12 @@
       if (memQueue.length > MAX_QUEUE) memQueue = memQueue.slice(-MAX_QUEUE);
       persist();
       // Nudge the background to flush soon (no-op if SW unavailable).
+      // The promise form is caught: during reload/update there may be no
+      // receiving end yet, which must never surface as an unhandled error.
       try {
         if (chrome.runtime && chrome.runtime.sendMessage) {
-          chrome.runtime.sendMessage({ type: 'ANALYTICS_FLUSH_HINT' });
+          const p = chrome.runtime.sendMessage({ type: 'ANALYTICS_FLUSH_HINT' });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
         }
       } catch (e) { /* sw may be asleep; alarm flush covers it */ }
     } catch (e) { /* analytics must never throw into product code */ }
