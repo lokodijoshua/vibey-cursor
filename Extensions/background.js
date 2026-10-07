@@ -1,6 +1,6 @@
 try { importScripts('config.js'); } catch (e) { /* config optional in some contexts */ }
 try { importScripts('analytics.js'); } catch (e) { /* queue lib optional in some contexts */ }
-const BACKEND_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
+const BACKEND_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibey-cursor-backendv2.vercel.app';
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === 'OPEN_SIDE_PANEL' && sender.tab?.id) {

@@ -7,7 +7,7 @@
   <script src="config.js"></script>
   <script>
     const sessionId = new URLSearchParams(location.search).get('session_id');
-    const BACKEND_URL = (window.VIBEY_CONFIG && window.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
+    const BACKEND_URL = (window.VIBEY_CONFIG && window.VIBEY_CONFIG.BACKEND_URL) || 'https://vibey-cursor-backendv2.vercel.app';
     const EMAIL_DONE = 'Payment confirmed! Your license key is on its way to your email — paste it into the VibeyCursor extension popup under "Activate License".';
 
     if (!sessionId) {

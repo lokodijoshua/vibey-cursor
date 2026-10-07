@@ -38,7 +38,7 @@ async function getLicenseKey() {
 }
 
 function backendUrl() {
-  return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibeycursor-backend.vercel.app';
+  return (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL) || 'https://vibey-cursor-backendv2.vercel.app';
 }
 
 // Behavior analytics helper (fire-and-forget; never blocks product).

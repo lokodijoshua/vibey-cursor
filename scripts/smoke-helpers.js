@@ -4,7 +4,7 @@
 // scripts never contain secrets. BASE defaults to production.
 import { randomUUID } from 'crypto';
 
-export const BASE = process.env.VC_BASE || 'https://vibeycursor-backend.vercel.app';
+export const BASE = process.env.VC_BASE || 'https://vibey-cursor-backendv2.vercel.app';
 
 let failures = 0;
 export function check(name, cond, detail = '') {
