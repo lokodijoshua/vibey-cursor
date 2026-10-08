@@ -66,7 +66,24 @@ function renderCard(item) {
   meta.innerHTML = `${kindIcon}<span></span>`;
   meta.querySelector('span').textContent = `${kindLabel} · <${item.tag}> · ${host}`;
   const img = item.screenshot ? document.createElement('img') : null;
-  if (img) img.src = item.screenshot;
+  if (img) {
+    img.src = item.screenshot;
+    img.title = 'Click to copy image';
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', async () => {
+      // Clicking the capture image copies the IMAGE (PNG) to the clipboard.
+      try {
+        const res = await fetch(item.screenshot);
+        const blob = await res.blob();
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        spTrack('history_item_copied', { tag: item.tag, mode: item.mode, source: 'image' });
+        img.classList.remove('copied-flash');
+        void img.offsetWidth; // restart the flash animation
+        img.classList.add('copied-flash');
+        setTimeout(() => img.classList.remove('copied-flash'), 900);
+      } catch (e) { /* clipboard image copy unavailable: no-op */ }
+    });
+  }
   const actions = document.createElement('div');
   actions.className = 'actions';
   actions.innerHTML = `

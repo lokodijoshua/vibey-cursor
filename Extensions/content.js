@@ -162,11 +162,51 @@ function showLimitPopup(quota) {
 function extractElementData(el) {
   const cs = getComputedStyle(el);
   const rect = el.getBoundingClientRect();
+  const attrs = {};
+  try {
+    for (const name of ['id', 'role', 'type', 'href', 'placeholder', 'alt', 'title', 'aria-label', 'target', 'value']) {
+      const v = el.getAttribute && el.getAttribute(name);
+      if (v !== null && v !== undefined && String(v).length > 0 && String(v).length <= 200) attrs[name] = String(v);
+    }
+  } catch (e) { /* attributes are best-effort */ }
+  // Direct-children outline: what the element is composed of (tags only,
+  // capped — structure understanding without content harvesting).
+  let children = [];
+  try {
+    children = Array.from(el.children).slice(0, 15).map((c) => {
+      const cr = c.getBoundingClientRect();
+      return {
+        tag: c.tagName.toLowerCase(),
+        w: Math.round(cr.width),
+        h: Math.round(cr.height),
+        text: c.children.length === 0 && c.innerText ? c.innerText.trim().slice(0, 60) : null,
+      };
+    });
+  } catch (e) { children = []; }
+  // Nearest section context: heading/landmark the element lives in.
+  let context = null;
+  try {
+    const scope = (el.closest && el.closest('section,article,main,nav,header,footer,form,aside')) || null;
+    if (scope && scope !== el) {
+      const h = scope.querySelector ? scope.querySelector('h1,h2,h3,h4') : null;
+      context = {
+        container: scope.tagName.toLowerCase(),
+        heading: h && h.innerText ? h.innerText.trim().slice(0, 80) : null,
+      };
+    }
+  } catch (e) { context = null; }
   return {
     tag: el.tagName.toLowerCase(),
-    classes: el.className && typeof el.className === 'string' ? el.className.split(' ').filter(Boolean) : [],
+    classes: el.className && typeof el.className === 'string' ? el.className.split(' ').filter(Boolean).slice(0, 10) : [],
+    attributes: attrs,
     text: el.innerText ? el.innerText.trim().slice(0, 200) : null,
-    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+    childCount: el.children ? el.children.length : 0,
+    children,
+    context,
+    interactive: el.tagName && /^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(el.tagName)
+      ? { disabled: !!el.disabled, ...(el.href ? { href: String(el.href).slice(0, 200) } : {}) }
+      : null,
     styles: {
       display: cs.display,
       position: cs.position,
@@ -175,29 +215,83 @@ function extractElementData(el) {
       padding: cs.padding,
       margin: cs.margin,
       backgroundColor: cs.backgroundColor,
+      backgroundImage: cs.backgroundImage && cs.backgroundImage !== 'none' ? cs.backgroundImage.slice(0, 200) : null,
       color: cs.color,
       fontSize: cs.fontSize,
       fontWeight: cs.fontWeight,
       fontFamily: cs.fontFamily,
+      fontStyle: cs.fontStyle,
+      lineHeight: cs.lineHeight,
+      letterSpacing: cs.letterSpacing,
+      textTransform: cs.textTransform,
+      textAlign: cs.textAlign,
+      textDecoration: cs.textDecoration,
       border: cs.border,
-      borderRadius: cs.borderRadius
+      borderRadius: cs.borderRadius,
+      boxShadow: cs.boxShadow && cs.boxShadow !== 'none' ? cs.boxShadow.slice(0, 200) : null,
+      textShadow: cs.textShadow && cs.textShadow !== 'none' ? cs.textShadow.slice(0, 200) : null,
+      opacity: cs.opacity,
+      cursor: cs.cursor,
+      overflow: cs.overflow,
+      zIndex: cs.zIndex,
+      flexDirection: cs.flexDirection,
+      justifyContent: cs.justifyContent,
+      alignItems: cs.alignItems,
+      gap: cs.gap,
+      gridTemplateColumns: cs.gridTemplateColumns && cs.gridTemplateColumns !== 'none' ? cs.gridTemplateColumns : null,
+      gridTemplateRows: cs.gridTemplateRows && cs.gridTemplateRows !== 'none' ? cs.gridTemplateRows : null,
+      transition: cs.transition && cs.transition !== 'all 0s ease 0s' ? cs.transition.slice(0, 200) : null,
+      transform: cs.transform && cs.transform !== 'none' ? cs.transform : null,
     }
   };
 }
 
+// Replacement rule: the rebuilt element must UPDATE existing matching
+// elements in place across the whole site — never append a duplicate in
+// a random spot. Worded per element kind so the AI applies it literally.
+function replacementRule(tag) {
+  const t = String(tag || 'element');
+  return [
+    `INTEGRATION RULE (mandatory): do NOT add a new <${t}> somewhere else on the page.`,
+    `Find EVERY existing <${t}> occurrence across the whole site and update them in place to this new design, preserving each one's position, surrounding layout, and function.`,
+    `If no Instruction below says otherwise, apply the redesign to all matching instances so the site stays consistent — no duplicates, no stray copies in random places.`,
+  ].join('\n');
+}
+
+function instructionBlock() {
+  return `Instruction: []`;
+}
+
 function buildPrompt(el) {
   const data = extractElementData(el);
-  return [
-    `Recreate this UI element in HTML/CSS (or React + Tailwind).`,
-    `<${data.tag}>${data.classes.length ? ' .' + data.classes.join('.') : ''}`,
-    `Size: ${data.styles.width} x ${data.styles.height}`,
-    `Display: ${data.styles.display}; Position: ${data.styles.position}`,
-    `Background: ${data.styles.backgroundColor}; Color: ${data.styles.color}`,
-    `Font: ${data.styles.fontSize} / ${data.styles.fontWeight} ${data.styles.fontFamily}`,
-    `Padding: ${data.styles.padding}; Margin: ${data.styles.margin}`,
-    `Border: ${data.styles.border}; Radius: ${data.styles.borderRadius}`,
-    data.text ? `Text: "${data.text}"` : null
-  ].filter(Boolean).join('\n');
+  const s = data.styles;
+  const lines = [
+    `Recreate this UI element in HTML/CSS (or React + Tailwind) with pixel-close fidelity.`,
+    ``,
+    `ELEMENT: <${data.tag}>${data.classes.length ? ' .' + data.classes.join('.') : ''}${data.attributes.id ? ' #' + data.attributes.id : ''}`,
+    data.attributes.role ? `Role: ${data.attributes.role}` : null,
+    data.context ? `Lives inside: <${data.context.container}>${data.context.heading ? ` headed "${data.context.heading}"` : ''}` : null,
+    ``,
+    `GEOMETRY: ${s.width} x ${s.height} (page position x:${data.rect.x}, y:${data.rect.y})`,
+    `LAYOUT: display:${s.display}; position:${s.position}; overflow:${s.overflow}; z-index:${s.zIndex}`,
+    (s.display.includes('flex') || s.display.includes('grid'))
+      ? `ARRANGEMENT: direction:${s.flexDirection}; justify:${s.justifyContent}; align:${s.alignItems}; gap:${s.gap}${s.gridTemplateColumns ? `; columns:${s.gridTemplateColumns}` : ''}${s.gridTemplateRows ? `; rows:${s.gridTemplateRows}` : ''}`
+      : null,
+    `SPACING: padding:${s.padding}; margin:${s.margin}`,
+    ``,
+    `SURFACE: background:${s.backgroundColor}${s.backgroundImage ? ` + ${s.backgroundImage}` : ''}; border:${s.border}; radius:${s.borderRadius}${s.boxShadow ? `; shadow:${s.boxShadow}` : ''}; opacity:${s.opacity}`,
+    `TEXT: color:${s.color}; font:${s.fontSize}/${s.fontWeight} ${s.fontFamily}; style:${s.fontStyle}; line-height:${s.lineHeight}; spacing:${s.letterSpacing}; transform:${s.textTransform}; align:${s.textAlign}; decoration:${s.textDecoration}${s.textShadow ? `; text-shadow:${s.textShadow}` : ''}`,
+    `BEHAVIOR: cursor:${s.cursor}${s.transition ? `; transition:${s.transition}` : ''}${s.transform ? `; transform:${s.transform}` : ''}`,
+    data.interactive ? `STATE: ${Object.entries(data.interactive).map(([k, v]) => `${k}=${v}`).join('; ')}` : null,
+    data.text ? `CONTENT: "${data.text}"` : null,
+    data.childCount ? `CONTAINS: ${data.childCount} direct child element(s)` : `CONTAINS: no child elements (leaf)`,
+    ...data.children.map((c) => `  - <${c.tag}> ${c.w}x${c.h}${c.text ? ` "${c.text}"` : ''}`),
+    ``,
+    replacementRule(data.tag),
+    ``,
+    instructionBlock(),
+  ];
+  return lines.filter((l) => l !== null).join('\n');
 }
 
 async function captureScreenshot(el) {
@@ -266,12 +360,16 @@ function treeToPromptText(node, indent = 0) {
 
 function buildSectionPrompt(tree) {
   return `
-Recreate this entire UI section in HTML/CSS (or React + Tailwind).
+Recreate this entire UI section in HTML/CSS (or React + Tailwind) with pixel-close fidelity.
 This is a nested component tree — preserve the hierarchy, spacing, and layout structure exactly:
 
 ${treeToPromptText(tree)}
 
 Build it as a single reusable component that matches this structure and styling as closely as possible.
+
+${replacementRule('section')}
+
+${instructionBlock()}
 `.trim();
 }
 function createModeSwitch() {
@@ -471,16 +569,25 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
-// Visibility-only toggle (Ctrl+Shift+H). Hides/shows VibeyCursor overlay
-// and controls without changing capture mode, license, history, or session.
+// Visibility-only toggle (Ctrl+Shift+H). Hides/shows EVERY VibeyCursor
+// node (overlay, buttons, mode switch, bars, badges, popups) without
+// changing capture mode, license, history, or session. Selector-based so
+// any future vc-* UI is covered automatically.
 function setUIVisible(visible, source) {
   vcUIVisible = visible;
-  const ids = ['vc-toggle-btn', 'vc-history-btn', 'vc-mode-switch',
-    'vc-action-bar', 'vc-badge', 'vc-limit-popup', 'vc-highlight', 'vc-tooltip'];
-  for (const id of ids) {
+  let nodes = [];
+  try {
+    nodes = Array.from(document.querySelectorAll('[id^="vc-"]'));
+  } catch (e) { nodes = []; }
+  for (const node of nodes) {
     try {
-      const node = document.getElementById(id);
-      if (node) node.style.display = visible ? '' : 'none';
+      if (!visible) {
+        if (!node.dataset.vcPrevDisplay) node.dataset.vcPrevDisplay = node.style.display || '';
+        node.style.display = 'none';
+      } else {
+        node.style.display = node.dataset.vcPrevDisplay || '';
+        delete node.dataset.vcPrevDisplay;
+      }
     } catch (e) { /* best-effort */ }
   }
   if (!visible) hideHighlight();

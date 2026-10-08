@@ -5,6 +5,7 @@ header button { background: #222; color: #aaa; border: none; padding: 6px 10px; 
 #history-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; max-height: 100vh; overflow-y: auto; }
 .card { background: #171717; border-radius: 10px; padding: 10px; }
 .card img { width: 100%; border-radius: 6px; margin-bottom: 8px; background: #000; }
+.card img.copied-flash { outline: 2px solid #4ade80; outline-offset: 2px; }
 .card .meta { font-size: 11px; color: #888; margin-bottom: 8px; }
 .card .actions { display: flex; gap: 6px; }
 .card button { flex: 1; background: #2a2a2a; color: #fff; border: none; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 11px; }
