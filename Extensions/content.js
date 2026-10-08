@@ -453,39 +453,160 @@ function dossierElementSpec(data, imgLabel) {
   return [
     `${imgLabel} <${data.tag}>${data.classes.length ? ' .' + data.classes.join('.') : ''} — ${data.rect.width}x${data.rect.height} at (${data.rect.x},${data.rect.y})`,
     `  surface: ${s.backgroundColor}; radius:${s.borderRadius}; border:${s.border}${s.boxShadow ? `; shadow:${s.boxShadow}` : ''}`,
-    `  text: ${s.color} ${s.fontSize}/${s.fontWeight}${data.text ? ` "${data.text}"` : ''}`,
+    `  typography: ${s.color} ${s.fontSize}/${s.fontWeight} ${s.fontFamily}; style:${s.fontStyle}; line-height:${s.lineHeight}; letter-spacing:${s.letterSpacing}; transform:${s.textTransform}`,
     `  layout: ${s.display} ${s.position}; padding:${s.padding}; margin:${s.margin}`,
+    ...(data.text ? [`  content: "${data.text}"`] : []),
+  ].join('\n');
+}
+
+// Human label for a reference image: "Reference 2 — Button "Get Pro"".
+function refLabel(data) {
+  const t = data.tag.toUpperCase();
+  const name = data.text ? ` "${data.text.slice(0, 40)}"` : (data.classes[0] ? ` .${data.classes[0]}` : '');
+  const kind = { BUTTON: 'Button', A: 'Link', H1: 'Heading', H2: 'Subheading', IMG: 'Image', FORM: 'Form', NAV: 'Navigation', INPUT: 'Field' }[t] || 'Element';
+  return `${kind}${name}`;
+}
+
+// Page-wide outline: landmarks + heading sequence, so the AI sees the
+// entire site skeleton, not just the clicked element.
+function pageOutline() {
+  const lines = [];
+  try {
+    lines.push(`Viewport: ${window.innerWidth}x${window.innerHeight}; page height: ${document.body ? document.body.scrollHeight : '?'}px`);
+    const landmarks = Array.from(document.querySelectorAll('header, nav, main, section, article, aside, footer')).slice(0, 30);
+    lines.push(`Landmarks (${landmarks.length}):`);
+    for (const lm of landmarks) {
+      if (isVibeyUI(lm)) continue;
+      const r = lm.getBoundingClientRect();
+      const h = lm.querySelector ? lm.querySelector('h1,h2,h3') : null;
+      lines.push(`  <${lm.tagName.toLowerCase()}>${lm.id ? `#${lm.id}` : ''} ${Math.round(r.width)}x${Math.round(r.height)}${h && h.innerText ? ` — "${h.innerText.trim().slice(0, 60)}"` : ''}`);
+    }
+    const heads = Array.from(document.querySelectorAll('h1,h2,h3')).slice(0, 30);
+    lines.push(`Heading sequence (${heads.length}):`);
+    for (const h of heads) {
+      if (isVibeyUI(h) || !h.innerText) continue;
+      lines.push(`  <${h.tagName.toLowerCase()}> "${h.innerText.trim().slice(0, 80)}"`);
+    }
+  } catch (e) { lines.push('(outline unreadable)'); }
+  return lines.join('\n');
+}
+
+// Hero block: first headline + supporting copy + nearby calls-to-action,
+// written out so the most-seen part of the site rebuilds exactly.
+function heroBlock() {
+  const lines = [];
+  try {
+    const h1 = document.querySelector('h1');
+    const heroHead = h1 && h1.innerText ? h1 : document.querySelector('h2');
+    if (!heroHead || !heroHead.innerText) {
+      lines.push('(no headline found on this page)');
+      return lines.join('\n');
+    }
+    const hs = getComputedStyle(heroHead);
+    const hr = heroHead.getBoundingClientRect();
+    lines.push(`Headline <${heroHead.tagName.toLowerCase()}>: "${heroHead.innerText.trim().slice(0, 140)}"`);
+    lines.push(`  typography: ${hs.color} ${hs.fontSize}/${hs.fontWeight} ${hs.fontFamily}; line-height:${hs.lineHeight}; letter-spacing:${hs.letterSpacing}; align:${hs.textAlign}; transform:${hs.textTransform}`);
+    lines.push(`  size: ${hs.width} x ${hs.height}; position: page (${Math.round(hr.left)},${Math.round(hr.top)})`);
+    const scope = heroHead.closest('section,header,main,div') || document.body;
+    const subs = Array.from(scope.querySelectorAll('p')).slice(0, 3);
+    for (const p of subs) {
+      if (!p.innerText || isVibeyUI(p)) continue;
+      const ps = getComputedStyle(p);
+      lines.push(`Supporting copy: "${p.innerText.trim().slice(0, 140)}" (${ps.fontSize}/${ps.fontWeight}, ${ps.color})`);
+    }
+    const ctas = Array.from(scope.querySelectorAll('button,a')).slice(0, 4);
+    for (const c of ctas) {
+      if (!c.innerText || isVibeyUI(c)) continue;
+      const cst = getComputedStyle(c);
+      const cr = c.getBoundingClientRect();
+      if (cr.width < 30) continue;
+      lines.push(`CTA <${c.tagName.toLowerCase()}> "${c.innerText.trim().slice(0, 50)}": ${Math.round(cr.width)}x${Math.round(cr.height)}; bg:${cst.backgroundColor}; color:${cst.color}; radius:${cst.borderRadius}; font:${cst.fontSize}/${cst.fontWeight}`);
+    }
+  } catch (e) { lines.push('(hero unreadable)'); }
+  return lines.join('\n');
+}
+
+// Design tokens observed across the scanned elements: the palette, type
+// scale, and radius language the rebuild must reuse for consistency.
+function designTokens(allData) {
+  const colors = new Set();
+  const texts = new Set();
+  const fonts = new Set();
+  const sizes = new Set();
+  const radii = new Set();
+  for (const d of allData) {
+    const s = d.styles;
+    if (s.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(s.backgroundColor)) colors.add(s.backgroundColor);
+    if (s.color) texts.add(s.color);
+    if (s.fontFamily) fonts.add(s.fontFamily.split(',')[0].replace(/["']/g, '').trim());
+    if (s.fontSize) sizes.add(s.fontSize);
+    if (s.borderRadius && s.borderRadius !== '0px') radii.add(s.borderRadius);
+  }
+  return [
+    `COLORS (backgrounds): ${Array.from(colors).slice(0, 10).join(' | ') || '—'}`,
+    `TEXT COLORS: ${Array.from(texts).slice(0, 10).join(' | ') || '—'}`,
+    `TYPEFACES: ${Array.from(fonts).slice(0, 5).join(' | ') || '—'}`,
+    `TYPE SCALE: ${Array.from(sizes).slice(0, 10).join(' | ') || '—'}`,
+    `RADII: ${Array.from(radii).slice(0, 8).join(' | ') || '—'}`,
   ].join('\n');
 }
 
 function buildDossier(parts) {
-  const figHtml = parts.elements.map((p, i) => `
+  const refItems = [];
+  if (parts.pageShot) refItems.push({ shot: parts.pageShot, label: 'Reference 1 — Full page (entire layout at a glance)' });
+  parts.elements.forEach((p, i) => {
+    refItems.push({ shot: p.shot, label: `Reference ${refItems.length + 1} — ${refLabel(p.data)}` });
+  });
+  const refHtml = refItems.map((r) => `
     <figure style="margin:0 0 16px;">
-      <img src="${p.shot}" alt="${escDossier(p.data.tag)} capture" style="max-width:100%;border:1px solid #333;border-radius:8px;" />
-      <figcaption style="font:12px monospace;white-space:pre-wrap;">${escDossier(p.spec)}</figcaption>
+      <img src="${r.shot}" alt="${escDossier(r.label)}" style="max-width:100%;border:1px solid #333;border-radius:8px;" />
+      <figcaption style="font:700 13px sans-serif;">${escDossier(r.label)}</figcaption>
     </figure>`).join('\n');
+  const refText = refItems.map((r) => r.label).join('\n');
+  const sheetsHtml = parts.elements.map((p) => `
+    <h3>${escDossier(refLabel(p.data))} — &lt;${escDossier(p.data.tag)}&gt;</h3>
+    <pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(p.spec)}</pre>`).join('\n');
+  const sheetsText = parts.elements.map((p) => `${refLabel(p.data)} — <${p.data.tag}>\n${p.spec}`).join('\n\n');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escDossier(parts.title)} — VibeyCursor section dossier</title></head>`
     + `<body style="font-family:sans-serif;max-width:900px;margin:0 auto;padding:24px;background:#fff;color:#111;">`
-    + `<h1>${escDossier(parts.title)}</h1>`
-    + `<p>Source: ${escDossier(parts.url)} · Captured with VibeyCursor section scan.</p>`
-    + (parts.pageShot ? `<h2>Full page</h2><img src="${parts.pageShot}" alt="full page screenshot" style="max-width:100%;border:1px solid #333;border-radius:8px;" />` : `<p><em>Full-page screenshot unavailable for this page.</em></p>`)
-    + `<h2>Key elements (${parts.elements.length})</h2>${figHtml}`
-    + `<h2>Section structure</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.treeText)}</pre>`
-    + `<h2>Integration rule</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.rule)}</pre>`
-    + `<h2>Instruction</h2><pre style="font:12px monospace;">${escDossier(parts.instruction)}</pre>`
+    + `<h1>${escDossier(parts.title)} — rebuild specification</h1>`
+    + `<p>Source: ${escDossier(parts.url)} · Scanned with VibeyCursor section scan. Match every reference image as closely as possible; keep the whole site consistent.</p>`
+    + `<h2>1. Reference images (read these first)</h2>${refHtml || '<p><em>No screenshots available.</em></p>'}`
+    + `<h2>2. Design tokens (reuse everywhere)</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.tokens)}</pre>`
+    + `<h2>3. Hero section (most-seen part — rebuild exactly)</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.hero)}</pre>`
+    + `<h2>4. Full page outline (entire site skeleton)</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.outline)}</pre>`
+    + `<h2>5. Clicked section structure</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.treeText)}</pre>`
+    + `<h2>6. Element spec sheets</h2>${sheetsHtml}`
+    + `<h2>7. Integration rule (mandatory)</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.rule)}</pre>`
+    + `<h2>8. Your instruction</h2><pre style="font:12px monospace;">${escDossier(parts.instruction)}</pre>`
     + `</body></html>`;
   const text = [
-    `${parts.title} — VibeyCursor section dossier`,
+    `${parts.title} — REBUILD SPECIFICATION (VibeyCursor section scan)`,
     `Source: ${parts.url}`,
+    `Match the reference images as closely as possible; keep the whole site consistent.`,
     ``,
-    `KEY ELEMENTS (${parts.elements.length}):`,
-    ...parts.elements.map((p) => p.spec),
+    `1. REFERENCE IMAGES (open first — ${refItems.length} attached above):`,
+    refText || '(none)',
     ``,
-    `SECTION STRUCTURE:`,
+    `2. DESIGN TOKENS (reuse everywhere):`,
+    parts.tokens,
+    ``,
+    `3. HERO SECTION (most-seen part — rebuild exactly):`,
+    parts.hero,
+    ``,
+    `4. FULL PAGE OUTLINE (entire site skeleton):`,
+    parts.outline,
+    ``,
+    `5. CLICKED SECTION STRUCTURE:`,
     parts.treeText,
     ``,
+    `6. ELEMENT SPEC SHEETS:`,
+    sheetsText || '(none)',
+    ``,
+    `7. INTEGRATION RULE (mandatory):`,
     parts.rule,
     ``,
+    `8. YOUR INSTRUCTION:`,
     parts.instruction,
   ].join('\n');
   return { html, text };
@@ -517,13 +638,17 @@ async function performSectionDossier(el, meta) {
       const shot = await shotCapped(k, 1);
       if (!shot) continue;
       const data = extractElementData(k);
-      elements.push({ shot, data, spec: dossierElementSpec(data, `Shot ${elements.length + 1}`) });
+      elements.push({ shot, data, spec: dossierElementSpec(data, refLabel(data)) });
     } catch (e) { /* one bad element never sinks the dossier */ }
   }
 
-  // 3. Section structure tree for the clicked element.
+  // 3. Section structure tree for the clicked element + page-wide context.
   const tree = buildSectionTree(el);
   const treeText = tree ? treeToPromptText(tree) : `<${tag}> (structure unreadable)`;
+  const clickedData = extractElementData(el);
+  const tokens = designTokens([clickedData, ...elements.map((p) => p.data)]);
+  const outline = pageOutline();
+  const hero = heroBlock();
 
   const rule = replacementRule('section');
   const instruction = instructionBlock();
@@ -533,6 +658,9 @@ async function performSectionDossier(el, meta) {
     treeText,
     elements,
     pageShot,
+    tokens,
+    outline,
+    hero,
     rule,
     instruction,
   });
@@ -928,12 +1056,13 @@ function showActionBar(rect, capture) {
     }
     vcTrack('enhance_requested', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, prompt_chars: capture.prompt ? capture.prompt.length : 0 });
     bar.querySelector('#vc-ai-enhance').innerHTML = `<span>Enhancing...</span>`;
-    // Server caps enhance input (4000 chars): send a condensed head slice so
-    // long section dossiers still get AI analysis instead of a rejection.
-    // The full dossier is already on the clipboard — nothing is lost.
-    const enhanceInput = capture.prompt && capture.prompt.length > 3800
-      ? capture.prompt.slice(0, 3800)
-      : capture.prompt;
+    // Server caps enhance input (4000 chars): condense long dossiers as
+    // head + tail so the AI keeps both the page context AND the closing
+    // integration rule + instruction. The full file is on the clipboard.
+    const enhanceInput = (function condenseForEnhance(prompt) {
+      if (!prompt || prompt.length <= 3800) return prompt;
+      return `${prompt.slice(0, 2200)}\n[... middle condensed for length — full context is on the user's clipboard ...]\n${prompt.slice(-1400)}`;
+    })(capture.prompt);
     chrome.runtime.sendMessage(
       {
         type: 'AI_ENHANCE',
