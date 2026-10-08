@@ -44,6 +44,8 @@
   .plan ul li { margin: 7px 0; } .plan ul li::before { content: "✓ "; color: var(--purple); }
   .plan button { width: 100%; padding: 12px; border: none; border-radius: 999px; font-weight: 700; cursor: pointer; font-size: 14px; background: #2a2a35; color: #fff; }
   .plan.hot button { background: var(--purple); }
+  .plan .pro-btn { display: block; width: 100%; padding: 12px; border-radius: 999px; font-weight: 700; font-size: 14px; background: var(--purple); color: #fff; text-decoration: none; text-align: center; }
+  .plan .pro-btn:hover { background: var(--purple-deep); }
   footer { text-align: center; padding: 40px 24px 50px; color: var(--muted); font-size: 13px; }
   footer a { color: var(--purple); text-decoration: none; margin: 0 10px; }
 </style>
@@ -57,7 +59,7 @@
   <div class="logo"><img src="assets/logo.png" alt="VibeyCursor logo" width="28" height="28" style="vertical-align:-6px; border-radius:7px; margin-right:8px;">Vibey<span>Cursor</span></div>
   <div class="nav-actions">
     <a class="gh" href="https://github.com/lokodijoshua/vibey-cursor" target="_blank" rel="noopener" aria-label="VibeyCursor on GitHub" title="VibeyCursor on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
-    <a class="btn" href="#pricing">Get Pro</a>
+    <a class="btn" id="nav-pro-link" href="#pricing">Get Pro</a>
   </div>
 </nav>
 
@@ -88,7 +90,7 @@
       <h3>Pro</h3>
       <div class="price">$9.99 <small>/month</small></div>
       <ul><li>Element screenshots</li><li>Full section capture</li><li>AI-enhanced prompts</li><li>History + JSON + Figma</li></ul>
-      <a href="#" id="pro-upgrade-link" class="cta" style="padding:12px 28px; font-size:14px;">Upgrade to Pro</a>
+      <a href="#" id="pro-upgrade-link" class="pro-btn">Upgrade to Pro</a>
     </div>
   </div>
 </section>
@@ -118,8 +120,10 @@
 
 <script src="config.js"></script>
 <script>
-  document.getElementById('pro-upgrade-link').href =
-    (window.VIBEY_CONFIG && window.VIBEY_CONFIG.STRIPE_PAYMENT_LINK_URL) || '#';
+  // Both Pro buttons go straight to Stripe checkout (single source of truth).
+  var payUrl = (window.VIBEY_CONFIG && window.VIBEY_CONFIG.STRIPE_PAYMENT_LINK_URL) || '#';
+  document.getElementById('pro-upgrade-link').href = payUrl;
+  document.getElementById('nav-pro-link').href = payUrl;
   function openInstall(e) { if (e) e.preventDefault(); document.getElementById('install-modal').style.display = 'flex'; }
   function closeInstall() { document.getElementById('install-modal').style.display = 'none'; }
 </script>
