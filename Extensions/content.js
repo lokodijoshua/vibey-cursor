@@ -425,6 +425,83 @@ ${instructionBlock()}
 // fallback, so the AI gets full context even without AI Enhance.
 const DOSSIER_MAX_SHOT_BYTES = 600000; // dataURL chars per image (storage-safe)
 
+// ---- Phase-2 native reference frame ----
+// Asks the background worker for browser-composited tab pixels. Never
+// throws: resolves {ok, method, dataUrl?} where method is one of
+// 'native' | 'unsupported' | 'fallback' (background could not capture).
+function requestNativeFrame() {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'VC_CAPTURE_FRAME' }, (res) => {
+        if (res && typeof res === 'object' && res.method) return resolve(res);
+        resolve({ ok: false, method: 'fallback' });
+      });
+    } catch (e) {
+      resolve({ ok: false, method: 'fallback' });
+    }
+  });
+}
+
+// Pure geometry: relates the selected section to the reference frame.
+// All inputs CSS px; output section_viewport is clamped to the visible
+// viewport so the crop below never reads outside the frame.
+function frameGeometry(viewport, scroll, rect) {
+  const vw = Math.max(1, viewport.w | 0);
+  const vh = Math.max(1, viewport.h | 0);
+  const sx = Math.max(0, Math.min(vw, Math.round(rect.left)));
+  const sy = Math.max(0, Math.min(vh, Math.round(rect.top)));
+  const ex = Math.max(0, Math.min(vw, Math.round(rect.left + rect.width)));
+  const ey = Math.max(0, Math.min(vh, Math.round(rect.top + rect.height)));
+  return {
+    viewport: { width: vw, height: vh },
+    scroll: { x: Math.round(scroll.x), y: Math.round(scroll.y) },
+    section_viewport: { x: sx, y: sy, width: Math.max(0, ex - sx), height: Math.max(0, ey - sy) },
+  };
+}
+
+function measureDataUrl(dataUrl, timeoutMs) {
+  return new Promise((resolve) => {
+    try {
+      let done = false;
+      const to = setTimeout(() => { if (!done) { done = true; resolve(null); } }, timeoutMs || 2000);
+      const im = new Image();
+      im.onload = () => { if (!done) { done = true; clearTimeout(to); resolve({ width: im.naturalWidth, height: im.naturalHeight }); } };
+      im.onerror = () => { if (!done) { done = true; clearTimeout(to); resolve(null); } };
+      im.src = dataUrl;
+    } catch (e) { resolve(null); }
+  });
+}
+
+// Crops the native frame (device pixels) to the clamped section viewport.
+// Returns a PNG dataURL or null; never throws.
+async function cropToSection(dataUrl, geom) {
+  try {
+    const dims = await measureDataUrl(dataUrl);
+    if (!dims || !dims.width || !dims.height) return null;
+    const sv = geom.section_viewport;
+    if (sv.width < 8 || sv.height < 8) return null;
+    const scaleX = dims.width / geom.viewport.width;
+    const scaleY = dims.height / geom.viewport.height;
+    const sx = Math.round(sv.x * scaleX);
+    const sy = Math.round(sv.y * scaleY);
+    const sw = Math.min(dims.width - sx, Math.round(sv.width * scaleX));
+    const sh = Math.min(dims.height - sy, Math.round(sv.height * scaleY));
+    if (sw < 8 || sh < 8) return null;
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('decode'));
+      im.src = dataUrl;
+    });
+    const c = document.createElement('canvas');
+    c.width = sw; c.height = sh;
+    c.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    return c.toDataURL('image/png');
+  } catch (e) {
+    return null;
+  }
+}
+
 async function shotCapped(target, scale, shotOpts) {
   try {
     const canvas = await html2canvas(target, Object.assign({
@@ -595,7 +672,13 @@ function designTokens(allData) {
 
 function buildDossier(parts) {
   const refItems = [];
-  if (parts.pageShot) refItems.push({ shot: parts.pageShot, label: 'Reference 1 — Full page (entire layout at a glance)' });
+  if (parts.pageShot) refItems.push({
+    shot: parts.pageShot,
+    label: parts.pageShotKind === 'native'
+      ? 'Reference 1 — Viewport (native browser pixels)'
+      : 'Reference 1 — Full page (DOM reconstruction fallback)',
+  });
+  if (parts.sectionCrop) refItems.push({ shot: parts.sectionCrop, label: `Reference ${refItems.length + 1} — Selected section crop (exact capture bounds)` });
   parts.elements.forEach((p, i) => {
     refItems.push({ shot: p.shot, label: `Reference ${refItems.length + 1} — ${refLabel(p.data)}` });
   });
@@ -661,18 +744,67 @@ async function performSectionDossier(el, meta) {
   showBadge(rect, 'Scanning page...');
   const tag = el.tagName ? el.tagName.toLowerCase() : 'section';
 
-  // 1. Full-page screenshot (falls back to current viewport on huge pages).
-  let pageShot = null;
+  // 1. Reference frame: native composited pixels first (Phase 2),
+  // DOM reconstruction (html2canvas) only as fallback.
+  const geom = frameGeometry(
+    { w: window.innerWidth, h: window.innerHeight },
+    { x: window.scrollX, y: window.scrollY },
+    rect
+  );
+  const dpr = (typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0)
+    ? window.devicePixelRatio : 1;
+  let nativeShot = null;
+  let sectionCrop = null;
+  let frameMethod = 'fallback';
+  let framePx = null;
+  let cropPx = null;
+  let captureMs = 0;
   try {
-    const huge = document.body && (document.body.scrollHeight > 9000 || document.body.scrollWidth > 3000);
-    if (!huge && document.body) {
-      pageShot = await shotCapped(document.body, 1);
-    } else {
-      pageShot = await shotCapped(document.body || document.documentElement, 1, {
-        x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight,
-      });
+    const t0 = Date.now();
+    const fr = await requestNativeFrame();
+    captureMs = Date.now() - t0;
+    if (fr && fr.ok && typeof fr.dataUrl === 'string' && fr.dataUrl.indexOf('data:image') === 0) {
+      nativeShot = fr.dataUrl;
+      frameMethod = 'native';
+      framePx = await measureDataUrl(nativeShot);
+      sectionCrop = await cropToSection(nativeShot, geom);
+      if (sectionCrop) cropPx = await measureDataUrl(sectionCrop);
+    } else if (fr && fr.method === 'unsupported') {
+      frameMethod = 'unsupported';
     }
-  } catch (e) { pageShot = null; }
+  } catch (e) { frameMethod = 'fallback'; }
+
+  // Legacy DOM-reconstruction shot: full fallback when native is unavailable;
+  // skipped when native succeeds (same pixels, higher fidelity, less work).
+  let pageShot = null;
+  if (!nativeShot) {
+    try {
+      const huge = document.body && (document.body.scrollHeight > 9000 || document.body.scrollWidth > 3000);
+      if (!huge && document.body) {
+        pageShot = await shotCapped(document.body, 1);
+      } else {
+        pageShot = await shotCapped(document.body || document.documentElement, 1, {
+          x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight,
+        });
+      }
+    } catch (e) { pageShot = null; }
+  }
+
+  // Reference-frame record for later phases (no schema lock-in).
+  const referenceFrame = {
+    method: nativeShot ? 'native' : (frameMethod === 'unsupported' ? 'unknown' : 'fallback'),
+    viewport: geom.viewport,
+    scroll: geom.scroll,
+    dpr,
+    section_bounds: {
+      x: Math.round(rect.left + window.scrollX), y: Math.round(rect.top + window.scrollY),
+      width: Math.round(rect.width), height: Math.round(rect.height),
+    },
+    section_viewport: geom.section_viewport,
+    frame_px: framePx,
+    crop_px: cropPx,
+    capture_ms: captureMs,
+  };
 
   // 2. Up to 5 key-element screenshots + specs (deep scan, like free capture).
   const keyEls = visibleKeyElements(el, 5);
@@ -726,7 +858,9 @@ async function performSectionDossier(el, meta) {
     url: location.href,
     treeText,
     elements,
-    pageShot,
+    pageShot: nativeShot || pageShot,
+    pageShotKind: nativeShot ? 'native' : 'legacy',
+    sectionCrop,
     tokens,
     outline,
     hero,
@@ -760,9 +894,9 @@ async function performSectionDossier(el, meta) {
     mode: 'section',
     tag,
     prompt: dossier.text,
-    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })), evidence },
-    screenshot: pageShot || (elements[0] ? elements[0].shot : null),
-    images: [pageShot, ...elements.map((p) => p.shot)].filter(Boolean).slice(0, 6),
+    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })), evidence, reference_frame: referenceFrame },
+    screenshot: sectionCrop || pageShot || (elements[0] ? elements[0].shot : null),
+    images: [nativeShot || pageShot, sectionCrop, ...elements.map((p) => p.shot)].filter(Boolean).slice(0, 6),
   };
   if (can('history')) await saveToHistory(capture);
 
@@ -778,7 +912,7 @@ async function performSectionDossier(el, meta) {
 
   showActionBar(rect, capture);
   showBadge(rect, copied
-    ? `Section dossier copied (${elements.length} element shots${pageShot ? ' + full page' : ''})`
+    ? `Section dossier copied (${referenceFrame.method === 'native' ? 'native pixels' : referenceFrame.method}${sectionCrop ? ' + section crop' : ''}, ${elements.length} element shots)`
     : 'Dossier built — copy failed in this browser');
 }
 function createModeSwitch() {

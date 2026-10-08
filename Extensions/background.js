@@ -63,6 +63,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // keep channel open for async response
 });
 
+// Native reference frame (Phase 2): browser-composited pixels of the visible
+// tab — true gradients, video/canvas frames, blend modes, filters — which
+// DOM re-rendering (html2canvas) can only approximate. Runs here because
+// chrome.tabs.captureVisibleTab is a tab-level API unavailable to content
+// scripts. PNG for maximum fidelity; the caller downscales for storage.
+// Capability-detected at runtime (no browser sniffing): absent API or any
+// rejection (chrome:// pages, Web Store, DRM) resolves unsupported and the
+// caller keeps the existing html2canvas fallback. No new permissions:
+// activeTab (already held) covers capture of the invoking tab.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'VC_CAPTURE_FRAME') return false;
+  try {
+    if (!chrome.tabs || typeof chrome.tabs.captureVisibleTab !== 'function') {
+      sendResponse({ ok: false, method: 'unsupported' });
+      return false;
+    }
+    const winId = sender && sender.tab && typeof sender.tab.windowId === 'number'
+      ? sender.tab.windowId
+      : undefined;
+    // captureVisibleTab(windowId?, options?): windowId omitted entirely when
+    // unknown (passing an options object positionally is not a valid overload).
+    const attempt = winId !== undefined
+      ? chrome.tabs.captureVisibleTab(winId, { format: 'png' })
+      : chrome.tabs.captureVisibleTab();
+    Promise.resolve(attempt)
+      .then((dataUrl) => {
+        if (typeof dataUrl === 'string' && dataUrl.indexOf('data:image') === 0) {
+          sendResponse({ ok: true, method: 'native', dataUrl });
+        } else {
+          sendResponse({ ok: false, method: 'fallback', error: 'empty-frame' });
+        }
+      })
+      .catch((err) => sendResponse({
+        ok: false, method: 'fallback',
+        error: String((err && err.message) || err).slice(0, 120),
+      }));
+  } catch (e) {
+    try { sendResponse({ ok: false, method: 'fallback' }); } catch (e2) {}
+    return false;
+  }
+  return true; // keep channel open for async response
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'toggle-inspector' && command !== 'toggle-vibey-ui') return;
   try {
