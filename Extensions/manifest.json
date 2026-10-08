@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VibeyCursor",
-  "version": "2.5",
+  "version": "2.6",
   "description": "Hover any element, copy its full design as an AI prompt.",
   "permissions": ["activeTab", "clipboardWrite", "storage", "downloads", "sidePanel", "scripting", "alarms"],
   "host_permissions": ["https://vibey-cursor-backendv2.vercel.app/*"],
@@ -34,7 +34,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["config.js", "analytics.js", "icons.js", "design-context.js", "lib/html2canvas.min.js", "content.js"],
+      "js": ["config.js", "analytics.js", "icons.js", "design-context.js", "context-json.js", "lib/html2canvas.min.js", "content.js"],
       "css": ["content.css"]
     }
   ]

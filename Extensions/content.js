@@ -842,6 +842,48 @@ async function performSectionDossier(el, meta) {
     }
   } catch (e) { /* evidence is enhancement — the dossier must survive without it */ }
 
+  // 3c. Design Context JSON v1 (canonical normalization for later phases).
+  // Dossier text/HTML output is intentionally unchanged (no prompt rewrite).
+  // Any builder failure degrades to null — the capture always survives.
+  let designContext = null;
+  try {
+    const CJ = globalThis.VIBEY_CTXJSON;
+    if (CJ) {
+      designContext = CJ.buildDesignContext({
+        timestamp: Date.now(),
+        tag: tag,
+        role: (clickedData.attributes && clickedData.attributes.role) || null,
+        childCount: clickedData.childCount,
+        viewport: {
+          width: geom.viewport.width, height: geom.viewport.height, dpr: dpr,
+          scrollX: geom.scroll.x, scrollY: geom.scroll.y,
+        },
+        referenceFrame: {
+          method: referenceFrame.method,
+          frameWidth: referenceFrame.frame_px ? referenceFrame.frame_px.width : null,
+          frameHeight: referenceFrame.frame_px ? referenceFrame.frame_px.height : null,
+          sectionBounds: referenceFrame.section_bounds,
+          cropBounds: cropPx
+            ? { x: geom.section_viewport.x, y: geom.section_viewport.y, width: cropPx.width, height: cropPx.height }
+            : null,
+          captureMs: referenceFrame.capture_ms,
+        },
+        tree: tree,
+        clicked: {
+          styles: clickedData.styles,
+          rectX: rect.left, rectY: rect.top, rectW: rect.width, rectH: rect.height,
+        },
+        elements: elements.map((p) => ({
+          tag: p.data.tag,
+          classification: elementTypeFromTag(p.data.tag, 'element'),
+          data: p.data,
+        })),
+        stylePool: [clickedData.styles].concat(elements.map((p) => p.data.styles)),
+        evidence: evidence,
+      });
+    }
+  } catch (e) { designContext = null; }
+
   const rule = replacementRule('section');
   const instruction = instructionBlock();
   let appendixText = '';
@@ -894,7 +936,7 @@ async function performSectionDossier(el, meta) {
     mode: 'section',
     tag,
     prompt: dossier.text,
-    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })), evidence, reference_frame: referenceFrame },
+    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })), evidence, reference_frame: referenceFrame, designContext: designContext },
     screenshot: sectionCrop || pageShot || (elements[0] ? elements[0].shot : null),
     images: [nativeShot || pageShot, sectionCrop, ...elements.map((p) => p.shot)].filter(Boolean).slice(0, 6),
   };
