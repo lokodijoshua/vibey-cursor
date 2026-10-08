@@ -70,6 +70,39 @@ function vcSend(msg) {
   } catch (e) { /* messaging is best-effort */ }
 }
 
+// Backend call helper. Primary path is the background VC_API proxy: the
+// service worker is exempt from the page's Content-Security-Policy, while
+// a direct fetch() from this content script is blocked on strict-CSP
+// sites (which silently breaks entitlements/quota/activation and makes Pro
+// look permanently locked). Falls back to direct fetch if the worker is
+// unreachable (e.g. mid-reload). Always resolves {ok, status, data}.
+function vcApi(path, body) {
+  const payload = body && typeof body === 'object' ? body : {};
+  function direct() {
+    return fetch(`${backendUrl()}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(async (r) => {
+        let data = null;
+        try { data = await r.json(); } catch (e) { data = null; }
+        return { ok: r.ok, status: r.status, data };
+      })
+      .catch(() => ({ ok: false, status: 0, data: null }));
+  }
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'VC_API', path, body: payload }, (res) => {
+        if (res && typeof res === 'object' && typeof res.status === 'number') return resolve(res);
+        direct().then(resolve);
+      });
+    } catch (e) {
+      direct().then(resolve);
+    }
+  });
+}
+
 function vcElementMeta(el, extra) {
   const out = Object.assign({}, extra);
   try {
@@ -107,16 +140,12 @@ let vcEntHealResult = null;
 async function checkQuota() {
   try {
     const { licenseKey } = await chrome.storage.local.get('licenseKey');
-    const res = await fetch(`${backendUrl()}/api/usage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(licenseKey ? { licenseKey } : {}),
-        installationId: await getInstallationId(),
-      })
+    const res = await vcApi('/api/usage', {
+      ...(licenseKey ? { licenseKey } : {}),
+      installationId: await getInstallationId(),
     });
     if (!res.ok && res.status !== 429) return { allowed: true };
-    const quota = await res.json();
+    const quota = res.data || {};
     if (quota && typeof quota.remaining === 'number') {
       try { await chrome.storage.local.set({ vcQuota: { remaining: quota.remaining, limit: quota.limit || null } }); } catch (e) {}
     }
@@ -1112,16 +1141,12 @@ async function fetchEntitlements(force = false) {
   if (!force && Date.now() - entFetchedAt < ENT_TTL_MS && entFetchedAt > 0) return entitlements;
   try {
     const { licenseKey } = await chrome.storage.local.get('licenseKey');
-    const res = await fetch(`${backendUrl()}/api/entitlements`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(licenseKey ? { licenseKey } : {}),
-        installationId: await getInstallationId(),
-      })
+    const res = await vcApi('/api/entitlements', {
+      ...(licenseKey ? { licenseKey } : {}),
+      installationId: await getInstallationId(),
     });
     if (res.ok) {
-      entitlements = await res.json();
+      entitlements = res.data || { plan: 'free', features: {} };
       entFetchedAt = Date.now();
       currentPlan = entitlements.plan || 'free';
       await chrome.storage.local.set({ licensePlan: currentPlan });
@@ -1138,11 +1163,7 @@ async function fetchEntitlements(force = false) {
       const { licenseKey } = await chrome.storage.local.get('licenseKey');
       if (licenseKey && String(entitlements.plan || '').toLowerCase() !== 'pro') {
         vcEntHealTried = true;
-        const heal = await fetch(`${backendUrl()}/api/activate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ licenseKey, installationId: await getInstallationId() }),
-        });
+        const heal = await vcApi('/api/activate', { licenseKey, installationId: await getInstallationId() });
         vcEntHealResult = heal.ok ? 'ok' : (heal.status === 409 ? 'limit' : 'error');
         if (heal.ok) {
           entFetchedAt = 0;

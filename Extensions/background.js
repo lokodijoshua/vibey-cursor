@@ -35,6 +35,34 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// Generic backend proxy for content scripts. fetch() inside a content
+// script runs under the PAGE's Content-Security-Policy, so on strict-CSP
+// sites every direct backend call fails and Pro looks permanently locked
+// (entitlements/quota/activation all fail closed or fail silent). The
+// service worker is exempt from page CSP (host_permissions apply), so all
+// content-script backend traffic goes through here — same pattern as the
+// AI_ENHANCE proxy below. Path allowlist: product endpoints only.
+const VC_API_ALLOW = ['/api/entitlements', '/api/activate', '/api/usage', '/api/analytics'];
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'VC_API' || !VC_API_ALLOW.includes(msg.path)) return false;
+  fetch(`${BACKEND_URL}${msg.path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(msg.body && typeof msg.body === 'object' ? msg.body : {}),
+  })
+    .then(async (r) => {
+      let data = null;
+      try { data = await r.json(); } catch (e) { data = null; }
+      sendResponse({ ok: r.ok, status: r.status, data });
+    })
+    .catch((err) => sendResponse({
+      ok: false, status: 0,
+      error: String((err && err.message) || err).slice(0, 120),
+    }));
+  return true; // keep channel open for async response
+});
+
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== 'toggle-inspector' && command !== 'toggle-vibey-ui') return;
   try {

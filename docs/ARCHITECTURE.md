@@ -52,6 +52,10 @@ AI prompt rewriting. No password accounts — license-key identity only.
 license → subscription → activation state. Extension caches ≤1h (refresh on
 start/activation/hourly/premium-request) and gates via `can(feature)`.
 Server re-verifies on every privileged call, so cache is UX-only.
+Content-script backend calls (entitlements/activation/quota) go through a
+background `VC_API` message proxy: `fetch()` in a content script runs under
+the page's CSP and is blocked on strict-CSP sites, while the service worker
+is exempt (host_permissions apply). Direct fetch remains as fallback.
 
 ## Rate limiting
 
