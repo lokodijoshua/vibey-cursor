@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VibeyCursor",
-  "version": "2.0",
+  "version": "2.3",
   "description": "Hover any element, copy its full design as an AI prompt.",
   "permissions": ["activeTab", "clipboardWrite", "storage", "downloads", "sidePanel", "scripting", "alarms"],
   "host_permissions": ["https://vibey-cursor-backendv2.vercel.app/*"],

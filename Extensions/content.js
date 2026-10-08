@@ -96,6 +96,9 @@ function vcElementMeta(el, extra) {
 // UI-visibility state for the Ctrl+Shift+H toggle. Visibility only —
 // never touches inspectorEnabled, license, history, or session state.
 let vcUIVisible = true;
+// Activation self-heal bookkeeping (see fetchEntitlements).
+let vcEntHealTried = false;
+let vcEntHealResult = null;
 
 // Ask the server whether another capture is allowed right now.
 // Sends installation id always, license key when present — the server
@@ -372,6 +375,213 @@ ${replacementRule('section')}
 ${instructionBlock()}
 `.trim();
 }
+
+// ---- Section dossier (Pro): full-page scan packed into one AI-readable
+// file. Full-page screenshot + up to 5 key-element screenshots (embedded
+// as images) + layout tree + per-element specs + replacement rule +
+// Instruction bracket. Copied to clipboard as rich HTML with a plain-text
+// fallback, so the AI gets full context even without AI Enhance.
+const DOSSIER_MAX_SHOT_BYTES = 600000; // dataURL chars per image (storage-safe)
+
+async function shotCapped(target, scale, shotOpts) {
+  try {
+    const canvas = await html2canvas(target, Object.assign({
+      backgroundColor: null,
+      scale: scale || 1,
+      logging: false,
+      useCORS: true,
+    }, shotOpts || {}));
+    let url = canvas.toDataURL('image/png');
+    let w = canvas.width;
+    let guard = 0;
+    while (url.length > DOSSIER_MAX_SHOT_BYTES && guard < 3 && w > 320) {
+      w = Math.max(320, Math.floor(w / 2));
+      const small = document.createElement('canvas');
+      small.width = w;
+      small.height = Math.max(1, Math.round(canvas.height * (w / canvas.width)));
+      small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
+      url = small.toDataURL('image/png');
+      guard++;
+    }
+    return url.length > DOSSIER_MAX_SHOT_BYTES * 2 ? null : url;
+  } catch (e) {
+    return null; // screenshots are enhancement, never fatal
+  }
+}
+
+// Heuristic key elements: large, visible, near the top — buttons, CTAs,
+// headings, hero media, forms. Deduplicated, capped.
+function visibleKeyElements(excludeEl, max) {
+  try {
+    const found = [];
+    const cands = Array.from(
+      document.querySelectorAll('button, a, h1, h2, img, form, nav, input[type="submit"], [role="button"]')
+    ).slice(0, 250);
+    for (const c of cands) {
+      if (!c || c === excludeEl || isVibeyUI(c)) continue;
+      const r = c.getBoundingClientRect();
+      if (r.width < 40 || r.height < 14) continue;
+      if (r.bottom < 0 || r.top > window.innerHeight * 1.5) continue;
+      const area = Math.min(r.width, 1200) * Math.min(r.height, 800);
+      const score = area / (1 + Math.max(0, r.top) / 600);
+      found.push({ el: c, score });
+    }
+    found.sort((a, b) => b.score - a.score);
+    const picked = [];
+    const seen = new Set();
+    for (const f of found) {
+      const key = `${f.el.tagName}:${(f.el.innerText || '').trim().slice(0, 30)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picked.push(f.el);
+      if (picked.length >= (max || 5)) break;
+    }
+    return picked;
+  } catch (e) {
+    return [];
+  }
+}
+
+function escDossier(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+  ));
+}
+
+function dossierElementSpec(data, imgLabel) {
+  const s = data.styles;
+  return [
+    `${imgLabel} <${data.tag}>${data.classes.length ? ' .' + data.classes.join('.') : ''} — ${data.rect.width}x${data.rect.height} at (${data.rect.x},${data.rect.y})`,
+    `  surface: ${s.backgroundColor}; radius:${s.borderRadius}; border:${s.border}${s.boxShadow ? `; shadow:${s.boxShadow}` : ''}`,
+    `  text: ${s.color} ${s.fontSize}/${s.fontWeight}${data.text ? ` "${data.text}"` : ''}`,
+    `  layout: ${s.display} ${s.position}; padding:${s.padding}; margin:${s.margin}`,
+  ].join('\n');
+}
+
+function buildDossier(parts) {
+  const figHtml = parts.elements.map((p, i) => `
+    <figure style="margin:0 0 16px;">
+      <img src="${p.shot}" alt="${escDossier(p.data.tag)} capture" style="max-width:100%;border:1px solid #333;border-radius:8px;" />
+      <figcaption style="font:12px monospace;white-space:pre-wrap;">${escDossier(p.spec)}</figcaption>
+    </figure>`).join('\n');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escDossier(parts.title)} — VibeyCursor section dossier</title></head>`
+    + `<body style="font-family:sans-serif;max-width:900px;margin:0 auto;padding:24px;background:#fff;color:#111;">`
+    + `<h1>${escDossier(parts.title)}</h1>`
+    + `<p>Source: ${escDossier(parts.url)} · Captured with VibeyCursor section scan.</p>`
+    + (parts.pageShot ? `<h2>Full page</h2><img src="${parts.pageShot}" alt="full page screenshot" style="max-width:100%;border:1px solid #333;border-radius:8px;" />` : `<p><em>Full-page screenshot unavailable for this page.</em></p>`)
+    + `<h2>Key elements (${parts.elements.length})</h2>${figHtml}`
+    + `<h2>Section structure</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.treeText)}</pre>`
+    + `<h2>Integration rule</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.rule)}</pre>`
+    + `<h2>Instruction</h2><pre style="font:12px monospace;">${escDossier(parts.instruction)}</pre>`
+    + `</body></html>`;
+  const text = [
+    `${parts.title} — VibeyCursor section dossier`,
+    `Source: ${parts.url}`,
+    ``,
+    `KEY ELEMENTS (${parts.elements.length}):`,
+    ...parts.elements.map((p) => p.spec),
+    ``,
+    `SECTION STRUCTURE:`,
+    parts.treeText,
+    ``,
+    parts.rule,
+    ``,
+    parts.instruction,
+  ].join('\n');
+  return { html, text };
+}
+
+async function performSectionDossier(el, meta) {
+  const rect = el.getBoundingClientRect();
+  showBadge(rect, 'Scanning page...');
+  const tag = el.tagName ? el.tagName.toLowerCase() : 'section';
+
+  // 1. Full-page screenshot (falls back to current viewport on huge pages).
+  let pageShot = null;
+  try {
+    const huge = document.body && (document.body.scrollHeight > 9000 || document.body.scrollWidth > 3000);
+    if (!huge && document.body) {
+      pageShot = await shotCapped(document.body, 1);
+    } else {
+      pageShot = await shotCapped(document.body || document.documentElement, 1, {
+        x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight,
+      });
+    }
+  } catch (e) { pageShot = null; }
+
+  // 2. Up to 5 key-element screenshots + specs (deep scan, like free capture).
+  const keyEls = visibleKeyElements(el, 5);
+  const elements = [];
+  for (const k of keyEls) {
+    try {
+      const shot = await shotCapped(k, 1);
+      if (!shot) continue;
+      const data = extractElementData(k);
+      elements.push({ shot, data, spec: dossierElementSpec(data, `Shot ${elements.length + 1}`) });
+    } catch (e) { /* one bad element never sinks the dossier */ }
+  }
+
+  // 3. Section structure tree for the clicked element.
+  const tree = buildSectionTree(el);
+  const treeText = tree ? treeToPromptText(tree) : `<${tag}> (structure unreadable)`;
+
+  const rule = replacementRule('section');
+  const instruction = instructionBlock();
+  const dossier = buildDossier({
+    title: document.title || 'Untitled page',
+    url: location.href,
+    treeText,
+    elements,
+    pageShot,
+    rule,
+    instruction,
+  });
+
+  // 4. Clipboard: rich single file first, plain text as fallback.
+  let copied = false;
+  try {
+    const htmlBlob = new Blob([dossier.html], { type: 'text/html' });
+    const textBlob = new Blob([dossier.text], { type: 'text/plain' });
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob }),
+    ]);
+    copied = true;
+  } catch (e) {
+    try {
+      await navigator.clipboard.writeText(dossier.text);
+      copied = true;
+    } catch (e2) { copied = false; }
+  }
+
+  const capture = {
+    id: crypto.randomUUID(),
+    timestamp: Date.now(),
+    url: location.href,
+    siteTitle: document.title,
+    mode: 'section',
+    tag,
+    prompt: dossier.text,
+    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })) },
+    screenshot: pageShot || (elements[0] ? elements[0].shot : null),
+    images: [pageShot, ...elements.map((p) => p.shot)].filter(Boolean).slice(0, 6),
+  };
+  if (can('history')) await saveToHistory(capture);
+
+  vcTrack('capture_completed', vcElementMeta(el, {
+    element_type: 'section', tag, mode: 'section', prompt_chars: dossier.text.length,
+  }));
+  vcTrack('prompt_generated', vcElementMeta(el, {
+    element_type: 'section', tag, mode: 'section', prompt_chars: dossier.text.length,
+  }));
+  if (copied) {
+    vcTrack('prompt_copied', vcElementMeta(el, { element_type: 'section', tag, mode: 'section', source: 'dossier' }));
+  }
+
+  showActionBar(rect, capture);
+  showBadge(rect, copied
+    ? `Section dossier copied (${elements.length} element shots${pageShot ? ' + full page' : ''})`
+    : 'Dossier built — copy failed in this browser');
+}
 function createModeSwitch() {
   const switcher = createEl('div', 'vc-mode-switch');
   switcher.innerHTML = `
@@ -387,7 +597,16 @@ function createModeSwitch() {
   switcher.querySelector('#vc-mode-section').addEventListener('click', async (e) => {
     e.stopPropagation();
     await fetchEntitlements();
-    if (entitlements.plan !== 'pro') return showUpgradeToast('Section capture is a Pro feature');
+    if (entitlements.plan !== 'pro') {
+      const { licenseKey } = await chrome.storage.local.get('licenseKey');
+      if (vcEntHealResult === 'limit') {
+        return showUpgradeToast('Pro is active on 2 other browsers — deactivate one first');
+      }
+      if (licenseKey) {
+        return showUpgradeToast('Still verifying Pro on this browser — try again in a moment');
+      }
+      return showUpgradeToast('Section capture is a Pro feature');
+    }
     currentMode = MODE.SECTION;
     switcher.querySelector('#vc-mode-section').classList.add('active');
     switcher.querySelector('#vc-mode-element').classList.remove('active');
@@ -418,6 +637,20 @@ async function performCapture(el) {
   const rect = el.getBoundingClientRect();
   const isSection = currentMode === MODE.SECTION;
 
+  // Section mode (Pro) builds the full-page dossier instead of a single prompt.
+  if (isSection) {
+    try {
+      await performSectionDossier(el, { elementType, tag });
+    } catch (err) {
+      vcTrack('capture_failed', vcElementMeta(el, {
+        element_type: 'section', tag, mode: currentMode,
+        error: err && err.name ? String(err.name).slice(0, 64) : 'error',
+      }));
+      showBadge(rect, 'Section scan failed — try again');
+    }
+    return;
+  }
+
   showBadge(rect, 'Capturing...');
 
   try {
@@ -425,14 +658,8 @@ async function performCapture(el) {
   const screenshot = wantShot ? await captureScreenshot(el) : null;
 
   let prompt, jsonData;
-  if (isSection) {
-    const tree = buildSectionTree(el);
-    prompt = buildSectionPrompt(tree);
-    jsonData = tree;
-  } else {
-    jsonData = extractElementData(el);
-    prompt = buildPrompt(el);
-  }
+  jsonData = extractElementData(el);
+  prompt = buildPrompt(el);
 
   const capture = {
     id: crypto.randomUUID(),
@@ -701,10 +928,16 @@ function showActionBar(rect, capture) {
     }
     vcTrack('enhance_requested', { element_type: elementTypeFromTag(capture.tag, capture.mode), tag: capture.tag, mode: capture.mode, prompt_chars: capture.prompt ? capture.prompt.length : 0 });
     bar.querySelector('#vc-ai-enhance').innerHTML = `<span>Enhancing...</span>`;
+    // Server caps enhance input (4000 chars): send a condensed head slice so
+    // long section dossiers still get AI analysis instead of a rejection.
+    // The full dossier is already on the clipboard — nothing is lost.
+    const enhanceInput = capture.prompt && capture.prompt.length > 3800
+      ? capture.prompt.slice(0, 3800)
+      : capture.prompt;
     chrome.runtime.sendMessage(
       {
         type: 'AI_ENHANCE',
-        prompt: capture.prompt,
+        prompt: enhanceInput,
         licenseKey: await getLicenseKey(),
         installationId: await getInstallationId(),
         meta: { elementType: elementTypeFromTag(capture.tag, capture.mode) },
@@ -766,6 +999,28 @@ async function fetchEntitlements(force = false) {
     }
   } catch (e) {
     // Offline: keep last-known state; server still guards everything.
+  }
+  // Self-heal (once per page session): a stored license with no Pro
+  // entitlement usually means the activation slot was never bound on this
+  // browser (reinstall, or validated while the backend was unreachable).
+  // Binding is idempotent server-side; 409 (slots full) just stays locked.
+  if (!vcEntHealTried) {
+    try {
+      const { licenseKey } = await chrome.storage.local.get('licenseKey');
+      if (licenseKey && String(entitlements.plan || '').toLowerCase() !== 'pro') {
+        vcEntHealTried = true;
+        const heal = await fetch(`${backendUrl()}/api/activate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ licenseKey, installationId: await getInstallationId() }),
+        });
+        vcEntHealResult = heal.ok ? 'ok' : (heal.status === 409 ? 'limit' : 'error');
+        if (heal.ok) {
+          entFetchedAt = 0;
+          return fetchEntitlements(true);
+        }
+      }
+    } catch (e) { vcEntHealResult = 'error'; }
   }
   return entitlements;
 }

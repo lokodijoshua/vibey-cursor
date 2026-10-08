@@ -2,6 +2,12 @@ const BACKEND = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.BACKEND_URL)
 const SITE_URL = (globalThis.VIBEY_CONFIG && globalThis.VIBEY_CONFIG.SITE_URL) || 'https://vibey-cursor-landing-page.vercel.app';
 
 const pricingLink = document.getElementById('pricing-link');
+try {
+  const verEl = document.getElementById('ext-version');
+  if (verEl && chrome.runtime && chrome.runtime.getManifest) {
+    verEl.textContent = `v${chrome.runtime.getManifest().version || ''}`;
+  }
+} catch (e) { /* version label is decorative */ }
 if (pricingLink) {
   pricingLink.href = `${SITE_URL}/pricing.html`;
   try {
