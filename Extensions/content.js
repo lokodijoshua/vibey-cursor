@@ -373,9 +373,15 @@ function buildSectionTree(el, depth = 0, maxDepth = 4, maxChildren = 12) {
   };
 
   const children = Array.from(el.children).slice(0, maxChildren);
+  if (el.children.length > maxChildren) node.truncated = 'children(' + el.children.length + ' total)';
   for (const child of children) {
     const childNode = buildSectionTree(child, depth + 1, maxDepth, maxChildren);
     if (childNode) node.children.push(childNode);
+    else {
+      // buildSectionTree returns null only past the depth cap: the child
+      // itself is unrepresented, so mark it explicitly (leaf or subtree).
+      node.children.push({ tag: child.tagName ? child.tagName.toLowerCase() : '?', truncated: 'depth', children: [], styles: {} });
+    }
   }
 
   return node;
@@ -383,10 +389,17 @@ function buildSectionTree(el, depth = 0, maxDepth = 4, maxChildren = 12) {
 
 function treeToPromptText(node, indent = 0) {
   const pad = '  '.repeat(indent);
+  if (node.truncated === 'depth') {
+    return `${pad}... [truncated: depth cap reached — deeper nodes not captured]\n`;
+  }
   let out = `${pad}<${node.tag}>${node.classes.length ? ' .' + node.classes.join('.') : ''}\n`;
   out += `${pad}  display:${node.styles.display}; size:${node.styles.width}x${node.styles.height}; bg:${node.styles.backgroundColor}; color:${node.styles.color}; font:${node.styles.fontSize}/${node.styles.fontWeight}; radius:${node.styles.borderRadius}; padding:${node.styles.padding}\n`;
   if (node.text) out += `${pad}  text: "${node.text}"\n`;
   node.children.forEach(child => { out += treeToPromptText(child, indent + 1); });
+  if (node.truncated && node.truncated.indexOf('children(') === 0) {
+    const shown = node.children.filter((c) => c.truncated !== 'depth').length;
+    out += `${pad}... [truncated: ${node.truncated} — only first ${shown} shown]\n`;
+  }
   return out;
 }
 
@@ -608,6 +621,7 @@ function buildDossier(parts) {
     + `<h2>6. Element spec sheets</h2>${sheetsHtml}`
     + `<h2>7. Integration rule (mandatory)</h2><pre style="font:12px monospace;white-space:pre-wrap;">${escDossier(parts.rule)}</pre>`
     + `<h2>8. Your instruction</h2><pre style="font:12px monospace;">${escDossier(parts.instruction)}</pre>`
+    + (parts.appendixHtml || '')
     + `</body></html>`;
   const text = [
     `${parts.title} — REBUILD SPECIFICATION (VibeyCursor section scan)`,
@@ -637,6 +651,7 @@ function buildDossier(parts) {
     ``,
     `8. YOUR INSTRUCTION:`,
     parts.instruction,
+    ...(parts.appendixText ? ['', parts.appendixText] : []),
   ].join('\n');
   return { html, text };
 }
@@ -679,8 +694,33 @@ async function performSectionDossier(el, meta) {
   const outline = pageOutline();
   const hero = heroBlock();
 
+  // 3b. Phase-1 evidence (additive; any extractor may fail safely).
+  // Budgets enforced inside design-context.js (~1500 nodes / ~800ms).
+  let evidence = { stacking: null, pseudo: [], assets: { items: [], truncated: false }, fonts: null };
+  try {
+    const DC = globalThis.VIBEY_DC;
+    if (DC) {
+      try { evidence.stacking = DC.dcStacking(el); } catch (e) { evidence.stacking = { confidence: 'UNKNOWN' }; }
+      try { evidence.pseudo = DC.dcPseudo(el) || []; } catch (e) { evidence.pseudo = []; }
+      try {
+        evidence.assets = DC.dcAssets(el) || evidence.assets;
+        await DC.dcResolveAssets(evidence.assets.items);
+      } catch (e) { /* inventory stays probed-as-UNKNOWN */ }
+      try { evidence.fonts = DC.dcFonts(el); } catch (e) { evidence.fonts = { confidence: 'UNKNOWN' }; }
+    }
+  } catch (e) { /* evidence is enhancement — the dossier must survive without it */ }
+
   const rule = replacementRule('section');
   const instruction = instructionBlock();
+  let appendixText = '';
+  let appendixHtml = '';
+  try {
+    const DC2 = globalThis.VIBEY_DC;
+    if (DC2) {
+      appendixText = DC2.dcAppendixText(evidence);
+      appendixHtml = DC2.dcAppendixHtml(evidence);
+    }
+  } catch (e) { /* appendix optional */ }
   const dossier = buildDossier({
     title: document.title || 'Untitled page',
     url: location.href,
@@ -692,6 +732,8 @@ async function performSectionDossier(el, meta) {
     hero,
     rule,
     instruction,
+    appendixText,
+    appendixHtml,
   });
 
   // 4. Clipboard: rich single file first, plain text as fallback.
@@ -718,7 +760,7 @@ async function performSectionDossier(el, meta) {
     mode: 'section',
     tag,
     prompt: dossier.text,
-    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })) },
+    json: { tree, elements: elements.map((p) => ({ spec: p.spec, tag: p.data.tag, rect: p.data.rect })), evidence },
     screenshot: pageShot || (elements[0] ? elements[0].shot : null),
     images: [pageShot, ...elements.map((p) => p.shot)].filter(Boolean).slice(0, 6),
   };
